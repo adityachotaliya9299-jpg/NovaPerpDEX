@@ -132,13 +132,13 @@ contract PositionLibTest is Test {
     }
 
     function testFuzz_EquityNeverNegative(uint256 price) public view {
-        price = bound(price, 1e18, 10_000e18);
+        price = bound(price, 1, 1_000_000e18);
         DataTypes.Position memory p = _pos(DataTypes.Side.LONG, 10_000e18, 1_000e18, 2_000e18);
-        // equity returns uint, inherently >= 0; assert it does not revert and is bounded
         uint256 e = PositionLib.equity(p, price);
-        assertLe(e, p.collateral + 10_000e18);
+        if (price <= p.entryPrice) {
+            assertLe(e, p.collateral);
+        }
     }
-
     function testFuzz_BlendedEntryWithinBounds(uint256 p1, uint256 p2) public pure {
         p1 = bound(p1, 1e18, 100_000e18);
         p2 = bound(p2, 1e18, 100_000e18);
