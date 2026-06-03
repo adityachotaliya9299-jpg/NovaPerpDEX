@@ -31,14 +31,12 @@ contract NovaPerpTokenTest is BaseTest {
     }
 
     function test_RevertWhen_MintExceedsCap() public {
-        uint256 remaining = nova.MAX_SUPPLY() - nova.totalSupply();
+        uint256 cap = nova.MAX_SUPPLY();
+        uint256 supply = nova.totalSupply();
+        uint256 remaining = cap - supply;
         vm.prank(admin);
         vm.expectRevert(
-            abi.encodeWithSelector(
-                NovaPerpToken.CapExceeded.selector,
-                nova.totalSupply() + remaining + 1,
-                nova.MAX_SUPPLY()
-            )
+            abi.encodeWithSelector(NovaPerpToken.CapExceeded.selector, supply + remaining + 1, cap)
         );
         nova.mint(alice, remaining + 1);
     }
@@ -63,14 +61,11 @@ contract NovaPerpTokenTest is BaseTest {
     }
 
     function test_RevertWhen_ConstructedAboveCap() public {
+        uint256 cap = nova.MAX_SUPPLY();
         vm.expectRevert(
-            abi.encodeWithSelector(
-                NovaPerpToken.CapExceeded.selector,
-                nova.MAX_SUPPLY() + 1,
-                nova.MAX_SUPPLY()
-            )
+            abi.encodeWithSelector(NovaPerpToken.CapExceeded.selector, cap + 1, cap)
         );
-        new NovaPerpToken(address(roles), admin, nova.MAX_SUPPLY() + 1);
+        new NovaPerpToken(address(roles), admin, cap + 1);
     }
 
     function test_RevertWhen_ConstructedWithZeroRoles() public {
