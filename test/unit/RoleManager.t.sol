@@ -37,21 +37,24 @@ contract RoleManagerTest is BaseTest {
     }
 
     function test_AdminCanGrantRole() public {
-        vm.prank(admin);
-        roles.grantRole(roles.LIQUIDATOR_ROLE(), bob);
-        assertTrue(roles.isLiquidator(bob));
+    bytes32 role = roles.LIQUIDATOR_ROLE();
+    vm.prank(admin);
+    roles.grantRole(role, bob);
+    assertTrue(roles.isLiquidator(bob));
     }
 
     function test_AdminCanRevokeRole() public {
+        bytes32 role = roles.OPERATOR_ROLE();
         vm.prank(admin);
-        roles.revokeRole(roles.OPERATOR_ROLE(), operator);
+        roles.revokeRole(role, operator);
         assertFalse(roles.isOperator(operator));
     }
 
     function test_RevertWhen_NonAdminGrantsRole() public {
+        bytes32 role = roles.OPERATOR_ROLE();
         vm.prank(alice);
         vm.expectRevert();
-        roles.grantRole(roles.OPERATOR_ROLE(), bob);
+        roles.grantRole(role, bob);
     }
 
     function test_RevertWhen_ConstructedWithZeroAdmin() public {
@@ -75,15 +78,17 @@ contract RoleManagerTest is BaseTest {
     }
 
     function test_AccountCanRenounceOwnRole() public {
+        bytes32 role = roles.OPERATOR_ROLE();
         vm.prank(operator);
-        roles.renounceRole(roles.OPERATOR_ROLE(), operator);
+        roles.renounceRole(role, operator);
         assertFalse(roles.isOperator(operator));
     }
 
     function testFuzz_GrantThenCheck(address account) public {
         vm.assume(account != address(0));
+        bytes32 role = roles.LIQUIDATOR_ROLE();
         vm.prank(admin);
-        roles.grantRole(roles.LIQUIDATOR_ROLE(), account);
+        roles.grantRole(role, account);
         assertTrue(roles.isLiquidator(account));
     }
 }
