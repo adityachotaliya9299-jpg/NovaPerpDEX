@@ -5,6 +5,7 @@ import {BaseTest} from "../BaseTest.sol";
 import {NovaPerpToken} from "../../src/core/NovaPerpToken.sol";
 
 /// @title NovaPerpTokenTest
+/// @author Aditya Chotaliya [adityachotaliya.vercel.app]
 /// @notice Unit tests for the capped, governor-mintable NOVA token.
 contract NovaPerpTokenTest is BaseTest {
     function test_InitialSupplyMintedToReceiver() public view {
