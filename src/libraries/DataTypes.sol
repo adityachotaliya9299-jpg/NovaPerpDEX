@@ -14,9 +14,9 @@ library DataTypes {
     }
 
     /// @notice Margin accounting mode for an account on a given market.
-    enum MarginMode {
-        CROSS,
-        ISOLATED
+     enum MarginMode {
+        ISOLATED,
+        CROSS
     }
 
     /// @notice Lifecycle state of a position.
