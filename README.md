@@ -2,7 +2,7 @@
 
 A fully on-chain perpetual futures DEX (GMX / dYdX style), built from first principles in Foundry with a Next.js frontend.
 
-> Status: **Phase 1 — Foundation & Core Architecture** complete.
+> Status: **Phase 2 — Margin Engine & Leverage System** complete.
 
 ## What this is
 
@@ -29,6 +29,15 @@ A decentralized perpetuals exchange supporting margin trading, leverage, liquida
 - `src/libraries/DataTypes.sol` — canonical structs and enums.
 - `src/libraries/Math.sol` — WAD / basis-point fixed-point helpers.
 - `src/libraries/PositionLib.sol` — pure PnL, equity, leverage and liquidation math.
+
+## Phase 2 contracts
+
+- `src/core/LeverageController.sol` — per-market risk registry; validates leverage, min-collateral and OI limits.
+- `src/core/FeeDistributor.sol` — prices, accrues and routes position fees to the treasury.
+- `src/core/CollateralVault.sol` — the sole owner of collateral movement; handles margin mode (cross/isolated) and conservation-preserving PnL settlement against the counterparty pool.
+- `src/core/MarginManager.sol` — trading entry point: open / increase / decrease / close, collateral changes, open-interest accounting.
+
+Design notes: the live protocol uses an 18-decimal USD collateral token so vault units map 1:1 to USD WAD (no decimal conversions in the margin math). Trader PnL settles against a pre-funded `liquidityPool` (the future Phase 6 LP vault), and total vault value is conserved on every path.
 
 ## Setup
 
