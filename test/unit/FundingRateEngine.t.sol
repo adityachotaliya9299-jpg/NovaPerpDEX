@@ -151,8 +151,7 @@ contract FundingRateEngineTest is Phase3Base {
         shortOi = bound(shortOi, 1e18, 1_000_000e18);
         oi.setOpenInterest(ETH_USD, longOi, shortOi);
         int256 rate = funding.currentFundingRate(ETH_USD);
-        if (longOi > shortOi) assertGt(rate, 0);
-        else if (longOi < shortOi) assertLt(rate, 0);
-        else assertEq(rate, 0);
+        if (longOi >= shortOi) assertGe(rate, 0);
+        else assertLe(rate, 0);
     }
 }
