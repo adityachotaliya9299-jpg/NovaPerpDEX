@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-pragma solidity 0.8.26;
+pragma solidity ^0.8.26;
 
 import {Phase2Base} from "../Phase2Base.sol";
 import {MarginManager} from "../../src/core/MarginManager.sol";
