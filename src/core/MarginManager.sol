@@ -63,6 +63,18 @@ contract MarginManager {
     error SizeExceedsPosition(uint256 sizeDelta, uint256 size);
     error OpenInterestCap(bytes32 market, uint256 attempted, uint256 cap);
     error CollateralBelowMin();
+    error NotLiquidator(address caller);
+    error NotLiquidatable(bytes32 key);
+
+    event PositionLiquidated(
+        bytes32 indexed key,
+        address indexed account,
+        bytes32 indexed market,
+        address keeper,
+        uint256 size,
+        int256 pnl,
+        uint256 price
+    );
 
     constructor(
         address roleManager,
@@ -247,6 +259,53 @@ contract MarginManager {
         DataTypes.Position memory p = _positions[positionKey(account, market, side)];
         if (p.size == 0) return 0;
         return p.leverage(priceFeed.getPrice(market));
+    }
+
+    /// @notice Whether a position's equity has fallen below its maintenance margin.
+    /// @dev Price/maintenance-margin based. Funding is folded into this health check
+    ///      in Phase 5 when the trade path is unified; see contract notes.
+    function isLiquidatable(address account, bytes32 market, DataTypes.Side side)
+        public
+        view
+        returns (bool)
+    {
+        DataTypes.Position memory p = _positions[positionKey(account, market, side)];
+        if (p.size == 0) return false;
+        uint256 price = priceFeed.getPrice(market);
+        uint256 maintenanceBps = leverageController.maintenanceMarginBps(market);
+        return PositionLib.isLiquidatable(p, price, maintenanceBps);
+    }
+
+    /// @notice Force-closes an unhealthy position. Callable only by LIQUIDATOR_ROLE
+    ///         (the LiquidationEngine), which passes the keeper to be rewarded.
+    function liquidate(address account, bytes32 market, DataTypes.Side side, address keeper)
+        external
+    {
+        if (!roles.hasRole(roles.LIQUIDATOR_ROLE(), msg.sender)) {
+            revert NotLiquidator(msg.sender);
+        }
+        bytes32 key = positionKey(account, market, side);
+        DataTypes.Position storage p = _positions[key];
+        if (p.size == 0) revert NoPosition(key);
+
+        uint256 price = priceFeed.getPrice(market);
+        uint256 maintenanceBps = leverageController.maintenanceMarginBps(market);
+        if (!PositionLib.isLiquidatable(p, price, maintenanceBps)) revert NotLiquidatable(key);
+
+        uint256 size = p.size;
+        uint256 collateral = p.collateral;
+        int256 pnl = PositionLib.unrealizedPnl(p, price);
+        uint256 liqFee = size.bps(leverageController.getMarketConfig(market).liquidationFeeBps);
+
+        // Wind down open interest and clear the position before external settlement.
+        _checkAndUpdateOpenInterest(market, side, size, false);
+        p.size = 0;
+        p.collateral = 0;
+        p.status = DataTypes.PositionStatus.LIQUIDATED;
+
+        collateralVault.liquidate(account, market, key, collateral, pnl, liqFee, keeper);
+
+        emit PositionLiquidated(key, account, market, keeper, size, pnl, price);
     }
 
     function _checkAndUpdateOpenInterest(
