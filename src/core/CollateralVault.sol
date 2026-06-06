@@ -3,6 +3,7 @@ pragma solidity ^0.8.26;
 
 import {DataTypes} from "../libraries/DataTypes.sol";
 import {Math} from "../libraries/Math.sol";
+import {IBadDebtHandler} from "../interfaces/IBadDebtHandler.sol";
 import {RoleManager} from "./RoleManager.sol";
 import {Vault} from "./Vault.sol";
 import {FeeDistributor} from "./FeeDistributor.sol";
@@ -32,6 +33,18 @@ contract CollateralVault {
     /// @notice The fee sink.
     FeeDistributor public feeDistributor;
 
+    /// @notice Insurance fund address (its locked vault balance backs shortfalls).
+    address public insuranceFund;
+
+    /// @notice Records socialized bad debt when the insurance fund is exhausted.
+    IBadDebtHandler public badDebtHandler;
+
+    /// @notice Share of the liquidation fee paid to the keeper, in basis points.
+    uint256 public keeperRewardBps;
+
+    /// @notice Hard cap on the keeper reward share (50%).
+    uint256 public constant MAX_KEEPER_REWARD_BPS = 5_000;
+
     /// @notice positionKey => collateral reserved (locked) for that position (WAD USD).
     mapping(bytes32 => uint256) public reservedCollateral;
 
@@ -50,12 +63,27 @@ contract CollateralVault {
     event Settled(bytes32 indexed key, address indexed account, int256 pnl, uint256 fee);
     event LiquidityPoolSet(address pool);
     event FeeDistributorSet(address feeDistributor);
+    event InsuranceFundSet(address insuranceFund);
+    event BadDebtHandlerSet(address badDebtHandler);
+    event KeeperRewardBpsSet(uint256 bps);
+    event Liquidated(
+        bytes32 indexed key,
+        address indexed account,
+        address indexed keeper,
+        uint256 lossToPool,
+        uint256 keeperReward,
+        uint256 insuranceShare,
+        uint256 badDebt
+    );
 
     error NotOperator(address caller);
     error NotGovernor(address caller);
     error ZeroAmount();
     error PoolNotSet();
     error FeeDistributorNotSet();
+    error InsuranceFundNotSet();
+    error BadDebtHandlerNotSet();
+    error KeeperRewardTooHigh(uint256 bps);
     error ModeChangeWhileOpen(address account, bytes32 market);
     error InsufficientReserved(bytes32 key, uint256 requested, uint256 available);
 
@@ -90,6 +118,24 @@ contract CollateralVault {
         require(fd != address(0), "CV: zero fd");
         feeDistributor = FeeDistributor(fd);
         emit FeeDistributorSet(fd);
+    }
+
+    function setInsuranceFund(address fund) external onlyGovernor {
+        require(fund != address(0), "CV: zero insurance");
+        insuranceFund = fund;
+        emit InsuranceFundSet(fund);
+    }
+
+    function setBadDebtHandler(address handler) external onlyGovernor {
+        require(handler != address(0), "CV: zero baddebt");
+        badDebtHandler = IBadDebtHandler(handler);
+        emit BadDebtHandlerSet(handler);
+    }
+
+    function setKeeperRewardBps(uint256 bps) external onlyGovernor {
+        if (bps > MAX_KEEPER_REWARD_BPS) revert KeeperRewardTooHigh(bps);
+        keeperRewardBps = bps;
+        emit KeeperRewardBpsSet(bps);
     }
 
     /// @notice Sets the margin mode for an account on a market. Operator-only.
@@ -231,6 +277,92 @@ contract CollateralVault {
         }
 
         emit Settled(key, account, pnl, feeToCharge);
+    }
+
+    /// @notice Settles a liquidation: the trader forfeits collateral to cover the loss
+    ///         and the liquidation fee, the keeper is rewarded, and any shortfall is
+    ///         drawn from the insurance fund or recorded as socialized bad debt.
+    /// @param account The position owner being liquidated.
+    /// @param market The market.
+    /// @param key The position key.
+    /// @param collateral The full collateral reserved for the position.
+    /// @param pnl Signed realized PnL at the liquidation mark (expected negative).
+    /// @param liquidationFee The liquidation fee (WAD USD) to skim from surplus collateral.
+    /// @param keeper The address rewarded for triggering the liquidation.
+    function liquidate(
+        address account,
+        bytes32 market,
+        bytes32 key,
+        uint256 collateral,
+        int256 pnl,
+        uint256 liquidationFee,
+        address keeper
+    ) external onlyOperator {
+        if (collateral == 0) revert ZeroAmount();
+        if (liquidityPool == address(0)) revert PoolNotSet();
+        if (insuranceFund == address(0)) revert InsuranceFundNotSet();
+        if (address(badDebtHandler) == address(0)) revert BadDebtHandlerNotSet();
+
+        uint256 reserved = reservedCollateral[key];
+        if (collateral > reserved) revert InsufficientReserved(key, collateral, reserved);
+
+        // Clear the ledger for this position.
+        reservedCollateral[key] = reserved - collateral;
+        marketReserved[account][market] -= collateral;
+        if (marginMode[account][market] == DataTypes.MarginMode.CROSS) {
+            crossReserved[account] -= collateral;
+        }
+
+        uint256 absLoss = pnl < 0 ? uint256(-pnl) : 0;
+
+        // 1. Loss to the pool, capped at the collateral.
+        uint256 lossToPool = Math.min(absLoss, collateral);
+        uint256 remaining = collateral - lossToPool;
+        if (lossToPool > 0) {
+            vault.transferLocked(account, liquidityPool, lossToPool);
+            vault.lock(liquidityPool, lossToPool);
+        }
+
+        // 2. Liquidation fee from any surplus: split keeper reward / insurance.
+        uint256 keeperReward;
+        uint256 insuranceShare;
+        uint256 feeCharged = Math.min(liquidationFee, remaining);
+        if (feeCharged > 0) {
+            keeperReward = feeCharged.bps(keeperRewardBps);
+            insuranceShare = feeCharged - keeperReward;
+            if (keeperReward > 0) {
+                vault.transferLocked(account, keeper, keeperReward); // -> keeper.free
+            }
+            if (insuranceShare > 0) {
+                vault.transferLocked(account, insuranceFund, insuranceShare);
+                vault.lock(insuranceFund, insuranceShare);
+            }
+            remaining -= feeCharged;
+        }
+
+        // 3. Any leftover collateral returns to the trader.
+        if (remaining > 0) {
+            vault.unlock(account, remaining);
+        }
+
+        // 4. Shortfall (loss exceeded collateral): insurance tops up the pool, then
+        //    the remainder is recorded as socialized bad debt.
+        uint256 badDebt;
+        if (absLoss > collateral) {
+            uint256 shortfall = absLoss - collateral;
+            uint256 insuranceAvailable = vault.lockedOf(insuranceFund);
+            uint256 insuranceCover = Math.min(shortfall, insuranceAvailable);
+            if (insuranceCover > 0) {
+                vault.transferLocked(insuranceFund, liquidityPool, insuranceCover);
+                vault.lock(liquidityPool, insuranceCover);
+            }
+            badDebt = shortfall - insuranceCover;
+            if (badDebt > 0) {
+                badDebtHandler.recordBadDebt(market, badDebt);
+            }
+        }
+
+        emit Liquidated(key, account, keeper, lossToPool, keeperReward, insuranceShare, badDebt);
     }
 
     // --------------------------------------------------------------------- //
