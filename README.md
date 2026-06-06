@@ -61,9 +61,6 @@ make gas             # gas report
 Phase 1 ships **98 test functions** across unit, fuzz and invariant suites (fuzz tests run 256+ iterations each).
 
 ## Tech stack
-
-
-
 Solidity 0.8.26 · Foundry · OpenZeppelin v5 · Chainlink (Phase 3) · Next.js 15 · wagmi v2 · The Graph
 
 ## License
