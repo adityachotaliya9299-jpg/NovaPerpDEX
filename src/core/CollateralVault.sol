@@ -303,66 +303,85 @@ contract CollateralVault {
         if (insuranceFund == address(0)) revert InsuranceFundNotSet();
         if (address(badDebtHandler) == address(0)) revert BadDebtHandlerNotSet();
 
-        uint256 reserved = reservedCollateral[key];
-        if (collateral > reserved) revert InsufficientReserved(key, collateral, reserved);
-
-        // Clear the ledger for this position.
-        reservedCollateral[key] = reserved - collateral;
-        marketReserved[account][market] -= collateral;
-        if (marginMode[account][market] == DataTypes.MarginMode.CROSS) {
-            crossReserved[account] -= collateral;
-        }
+        _clearReservation(account, market, key, collateral);
 
         uint256 absLoss = pnl < 0 ? uint256(-pnl) : 0;
 
         // 1. Loss to the pool, capped at the collateral.
         uint256 lossToPool = Math.min(absLoss, collateral);
-        uint256 remaining = collateral - lossToPool;
         if (lossToPool > 0) {
             vault.transferLocked(account, liquidityPool, lossToPool);
             vault.lock(liquidityPool, lossToPool);
         }
 
-        // 2. Liquidation fee from any surplus: split keeper reward / insurance.
-        uint256 keeperReward;
-        uint256 insuranceShare;
-        uint256 feeCharged = Math.min(liquidationFee, remaining);
+        // 2. Fee (keeper + insurance) from surplus, remainder back to the trader.
+        (uint256 keeperReward, uint256 insuranceShare) =
+            _chargeLiquidationFee(account, collateral - lossToPool, liquidationFee, keeper);
+
+        // 3. Shortfall: insurance tops up the pool, remainder is socialized bad debt.
+        uint256 badDebt;
+        if (absLoss > collateral) {
+            badDebt = _coverShortfall(market, absLoss - collateral);
+        }
+
+        emit Liquidated(key, account, keeper, lossToPool, keeperReward, insuranceShare, badDebt);
+    }
+
+    /// @dev Clears a position's reservation from the ledger (with bounds check).
+    function _clearReservation(address account, bytes32 market, bytes32 key, uint256 collateral)
+        private
+    {
+        uint256 reserved = reservedCollateral[key];
+        if (collateral > reserved) revert InsufficientReserved(key, collateral, reserved);
+        reservedCollateral[key] = reserved - collateral;
+        marketReserved[account][market] -= collateral;
+        if (marginMode[account][market] == DataTypes.MarginMode.CROSS) {
+            crossReserved[account] -= collateral;
+        }
+    }
+
+    /// @dev Skims the liquidation fee from `surplus`, splitting keeper/insurance, and
+    ///      returns any remaining collateral to the trader.
+    function _chargeLiquidationFee(
+        address account,
+        uint256 surplus,
+        uint256 liquidationFee,
+        address keeper
+    ) private returns (uint256 keeperReward, uint256 insuranceShare) {
+        uint256 feeCharged = Math.min(liquidationFee, surplus);
         if (feeCharged > 0) {
             keeperReward = feeCharged.bps(keeperRewardBps);
             insuranceShare = feeCharged - keeperReward;
             if (keeperReward > 0) {
-                vault.transferLocked(account, keeper, keeperReward); // -> keeper.free
+                vault.transferLocked(account, keeper, keeperReward);
             }
             if (insuranceShare > 0) {
                 vault.transferLocked(account, insuranceFund, insuranceShare);
                 vault.lock(insuranceFund, insuranceShare);
             }
-            remaining -= feeCharged;
         }
-
-        // 3. Any leftover collateral returns to the trader.
+        uint256 remaining = surplus - feeCharged;
         if (remaining > 0) {
             vault.unlock(account, remaining);
         }
+    }
 
-        // 4. Shortfall (loss exceeded collateral): insurance tops up the pool, then
-        //    the remainder is recorded as socialized bad debt.
-        uint256 badDebt;
-        if (absLoss > collateral) {
-            uint256 shortfall = absLoss - collateral;
-            uint256 insuranceAvailable = vault.lockedOf(insuranceFund);
-            uint256 insuranceCover = Math.min(shortfall, insuranceAvailable);
-            if (insuranceCover > 0) {
-                vault.transferLocked(insuranceFund, liquidityPool, insuranceCover);
-                vault.lock(liquidityPool, insuranceCover);
-            }
-            badDebt = shortfall - insuranceCover;
-            if (badDebt > 0) {
-                badDebtHandler.recordBadDebt(market, badDebt);
-            }
+    /// @dev Covers a pool shortfall from insurance, recording any uncovered remainder
+    ///      as socialized bad debt. Returns the recorded bad debt.
+    function _coverShortfall(bytes32 market, uint256 shortfall)
+        private
+        returns (uint256 badDebt)
+    {
+        uint256 insuranceAvailable = vault.lockedOf(insuranceFund);
+        uint256 insuranceCover = Math.min(shortfall, insuranceAvailable);
+        if (insuranceCover > 0) {
+            vault.transferLocked(insuranceFund, liquidityPool, insuranceCover);
+            vault.lock(liquidityPool, insuranceCover);
         }
-
-        emit Liquidated(key, account, keeper, lossToPool, keeperReward, insuranceShare, badDebt);
+        badDebt = shortfall - insuranceCover;
+        if (badDebt > 0) {
+            badDebtHandler.recordBadDebt(market, badDebt);
+        }
     }
 
     // --------------------------------------------------------------------- //
