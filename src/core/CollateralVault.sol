@@ -279,52 +279,47 @@ contract CollateralVault {
         emit Settled(key, account, pnl, feeToCharge);
     }
 
-    /// @notice Settles a liquidation: the trader forfeits collateral to cover the loss
-    ///         and the liquidation fee, the keeper is rewarded, and any shortfall is
-    ///         drawn from the insurance fund or recorded as socialized bad debt.
-    /// @param account The position owner being liquidated.
-    /// @param market The market.
-    /// @param key The position key.
-    /// @param collateral The full collateral reserved for the position.
-    /// @param pnl Signed realized PnL at the liquidation mark (expected negative).
-    /// @param liquidationFee The liquidation fee (WAD USD) to skim from surplus collateral.
-    /// @param keeper The address rewarded for triggering the liquidation.
-    function liquidate(
-        address account,
-        bytes32 market,
-        bytes32 key,
-        uint256 collateral,
-        int256 pnl,
-        uint256 liquidationFee,
-        address keeper
-    ) external onlyOperator {
-        if (collateral == 0) revert ZeroAmount();
+   
+    struct LiquidationParams {
+        address account;
+        bytes32 market;
+        bytes32 key;
+        uint256 collateral;
+        int256 pnl;
+        uint256 liquidationFee;
+        address keeper;
+    }
+
+    function liquidate(LiquidationParams calldata p) external onlyOperator {
+        if (p.collateral == 0) revert ZeroAmount();
         if (liquidityPool == address(0)) revert PoolNotSet();
         if (insuranceFund == address(0)) revert InsuranceFundNotSet();
         if (address(badDebtHandler) == address(0)) revert BadDebtHandlerNotSet();
 
-        _clearReservation(account, market, key, collateral);
+        _clearReservation(p.account, p.market, p.key, p.collateral);
 
-        uint256 absLoss = pnl < 0 ? uint256(-pnl) : 0;
+        uint256 absLoss = p.pnl < 0 ? uint256(-p.pnl) : 0;
 
         // 1. Loss to the pool, capped at the collateral.
-        uint256 lossToPool = Math.min(absLoss, collateral);
+        uint256 lossToPool = Math.min(absLoss, p.collateral);
         if (lossToPool > 0) {
-            vault.transferLocked(account, liquidityPool, lossToPool);
+            vault.transferLocked(p.account, liquidityPool, lossToPool);
             vault.lock(liquidityPool, lossToPool);
         }
 
         // 2. Fee (keeper + insurance) from surplus, remainder back to the trader.
         (uint256 keeperReward, uint256 insuranceShare) =
-            _chargeLiquidationFee(account, collateral - lossToPool, liquidationFee, keeper);
+            _chargeLiquidationFee(p.account, p.collateral - lossToPool, p.liquidationFee, p.keeper);
 
         // 3. Shortfall: insurance tops up the pool, remainder is socialized bad debt.
         uint256 badDebt;
-        if (absLoss > collateral) {
-            badDebt = _coverShortfall(market, absLoss - collateral);
+        if (absLoss > p.collateral) {
+            badDebt = _coverShortfall(p.market, absLoss - p.collateral);
         }
 
-        emit Liquidated(key, account, keeper, lossToPool, keeperReward, insuranceShare, badDebt);
+        emit Liquidated(
+            p.key, p.account, p.keeper, lossToPool, keeperReward, insuranceShare, badDebt
+        );
     }
 
     /// @dev Clears a position's reservation from the ledger (with bounds check).
