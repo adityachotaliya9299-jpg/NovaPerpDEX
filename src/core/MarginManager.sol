@@ -303,7 +303,17 @@ contract MarginManager {
         p.collateral = 0;
         p.status = DataTypes.PositionStatus.LIQUIDATED;
 
-        collateralVault.liquidate(account, market, key, collateral, pnl, liqFee, keeper);
+        collateralVault.liquidate(
+            CollateralVault.LiquidationParams({
+                account: account,
+                market: market,
+                key: key,
+                collateral: collateral,
+                pnl: pnl,
+                liquidationFee: liqFee,
+                keeper: keeper
+            })
+        );
 
         emit PositionLiquidated(key, account, market, keeper, size, pnl, price);
     }
