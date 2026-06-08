@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-pragma solidity ^0.8.26;
+pragma solidity 0.8.26;
 
 import {Phase4Base} from "../Phase4Base.sol";
 import {CollateralVault} from "../../src/core/CollateralVault.sol";
@@ -17,10 +17,26 @@ contract CollateralVaultLiquidationTest is Phase4Base {
         roles.grantRole(opRole, address(this));
     }
 
+    function _params(uint256 collateral, int256 pnl, uint256 liqFee)
+        internal
+        view
+        returns (CollateralVault.LiquidationParams memory)
+    {
+        return CollateralVault.LiquidationParams({
+            account: alice,
+            market: ETH_USD,
+            key: key,
+            collateral: collateral,
+            pnl: pnl,
+            liquidationFee: liqFee,
+            keeper: liquidator
+        });
+    }
+
     function test_RevertWhen_LiquidatePoolNotSet() public {
         CollateralVault cv = _freshOperatorVault();
         vm.expectRevert(CollateralVault.PoolNotSet.selector);
-        cv.liquidate(alice, ETH_USD, key, 1_000e18, -int256(500e18), 100e18, liquidator);
+        cv.liquidate(_params(1_000e18, -int256(500e18), 100e18));
     }
 
     function test_RevertWhen_LiquidateInsuranceNotSet() public {
@@ -28,7 +44,7 @@ contract CollateralVaultLiquidationTest is Phase4Base {
         vm.prank(admin);
         cv.setLiquidityPool(pool);
         vm.expectRevert(CollateralVault.InsuranceFundNotSet.selector);
-        cv.liquidate(alice, ETH_USD, key, 1_000e18, -int256(500e18), 100e18, liquidator);
+        cv.liquidate(_params(1_000e18, -int256(500e18), 100e18));
     }
 
     function test_RevertWhen_LiquidateBadDebtHandlerNotSet() public {
@@ -38,19 +54,19 @@ contract CollateralVaultLiquidationTest is Phase4Base {
         cv.setInsuranceFund(address(insurance));
         vm.stopPrank();
         vm.expectRevert(CollateralVault.BadDebtHandlerNotSet.selector);
-        cv.liquidate(alice, ETH_USD, key, 1_000e18, -int256(500e18), 100e18, liquidator);
+        cv.liquidate(_params(1_000e18, -int256(500e18), 100e18));
     }
 
     function test_RevertWhen_LiquidateZeroCollateral() public {
         CollateralVault cv = _freshOperatorVault();
         vm.expectRevert(CollateralVault.ZeroAmount.selector);
-        cv.liquidate(alice, ETH_USD, key, 0, -int256(500e18), 100e18, liquidator);
+        cv.liquidate(_params(0, -int256(500e18), 100e18));
     }
 
     function test_RevertWhen_NonOperatorLiquidates() public {
         vm.prank(alice);
         vm.expectRevert(abi.encodeWithSelector(CollateralVault.NotOperator.selector, alice));
-        cvault.liquidate(alice, ETH_USD, key, 1_000e18, -int256(500e18), 100e18, liquidator);
+        cvault.liquidate(_params(1_000e18, -int256(500e18), 100e18));
     }
 
     function test_RevertWhen_KeeperRewardBpsTooHigh() public {
