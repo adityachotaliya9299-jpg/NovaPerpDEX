@@ -5,6 +5,7 @@ import {Phase5Base} from "../Phase5Base.sol";
 import {DataTypes} from "../../src/libraries/DataTypes.sol";
 
 /// @title FundingIntegrationTest
+/// @author Aditya Chotaliya [adityachotaliya.xyz]
 /// @notice Verifies funding folds into realized PnL on close and into the liquidation
 ///         health check, routed through the pool so value stays conserved.
 contract FundingIntegrationTest is Phase5Base {
