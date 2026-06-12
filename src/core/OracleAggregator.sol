@@ -8,7 +8,7 @@ import {ChainlinkAdapter} from "./ChainlinkAdapter.sol";
 import {TWAPOracle} from "./TWAPOracle.sol";
 
 /// @title OracleAggregator
-/// @author Aditya Chotaliya [adityachotaliya.vercel.app]
+/// @author Aditya Chotaliya [adityachotaliya.xyz]
 /// @notice The protocol's canonical price source. Implements {IPriceFeed} so it is a
 ///         drop-in replacement for the Phase 1 PriceFeed — MarginManager is unchanged.
 /// @dev Uses Chainlink as the primary mark and an on-chain TWAP as a sanity bound.
