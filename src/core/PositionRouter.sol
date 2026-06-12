@@ -7,7 +7,7 @@ import {MarginManager} from "./MarginManager.sol";
 import {FundingRateEngine} from "./FundingRateEngine.sol";
 
 /// @title PositionRouter
-/// @author Aditya Chotaliya [adityachotaliya.vercel.app]   
+/// @author Aditya Chotaliya [adityachotaliya.xyz]  
 /// @notice The recommended user entry point for trading. It refreshes funding before
 ///         each action so positions open/close against an up-to-date funding index,
 ///         then routes the trade through the {MarginManager} on the caller's behalf.
