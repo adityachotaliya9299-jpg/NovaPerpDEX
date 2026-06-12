@@ -7,6 +7,7 @@ import {RiskManager} from "../../src/core/RiskManager.sol";
 import {DataTypes} from "../../src/libraries/DataTypes.sol";
 
 /// @title MarginManagerPhase5Test
+/// @author Aditya Chotaliya [adityachotaliya.xyz]
 /// @notice Tests for Phase 5 wiring: governor setters, router gating, and that earlier
 ///         behavior is preserved when optional refs are unwired.
 contract MarginManagerPhase5Test is Phase5Base {
