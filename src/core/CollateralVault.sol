@@ -9,7 +9,7 @@ import {Vault} from "./Vault.sol";
 import {FeeDistributor} from "./FeeDistributor.sol";
 
 /// @title CollateralVault
-/// @author Aditya Chotaliya [adityachotaliya.vercel.app]
+/// @author Aditya Chotaliya [adityachotaliya.xyz]
 /// @notice The single owner of all collateral movement for the margin engine.
 /// @dev MarginManager computes position state and PnL but delegates *every* token
 ///      movement to this contract, so the reservation ledger here can never diverge
