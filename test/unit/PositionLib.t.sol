@@ -7,6 +7,7 @@ import {PositionLib} from "../../src/libraries/PositionLib.sol";
 import {DataTypes} from "../../src/libraries/DataTypes.sol";
 
 /// @title PositionLibTest
+/// @author Aditya Chotaliya [adityachotaliya.xyz]
 /// @notice Unit tests for position PnL, equity, leverage and liquidation math.
 contract PositionLibTest is Test {
     function _pos(DataTypes.Side side, uint256 size, uint256 collateral, uint256 entry)
