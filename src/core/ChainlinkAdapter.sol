@@ -5,7 +5,7 @@ import {AggregatorV3Interface} from "../interfaces/AggregatorV3Interface.sol";
 import {RoleManager} from "./RoleManager.sol";
 
 /// @title ChainlinkAdapter
-/// @author Aditya Chotaliya [adityachotaliya.vercel.app]
+/// @author Aditya Chotaliya [adityachotaliya.xyz]
 /// @notice Wraps Chainlink price feeds, normalizing answers to WAD (1e18) USD and
 ///         enforcing freshness / round-completeness checks.
 /// @dev Exposes both a reverting `getPrice` (for callers that want hard guarantees)
