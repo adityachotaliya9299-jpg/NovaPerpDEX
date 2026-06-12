@@ -6,7 +6,7 @@ import {IPriceFeed} from "../interfaces/IPriceFeed.sol";
 import {MarginManager} from "./MarginManager.sol";
 
 /// @title OrderBook
-/// @author Aditya Chotaliya [adityachotaliya.vercel.app]
+/// @author Aditya Chotaliya [adityachotaliya.xyz]
 /// @notice Limit orders to open/increase a position when the mark crosses a trigger.
 contract OrderBook {
     IPriceFeed public immutable priceFeed;
