@@ -6,6 +6,7 @@ import {SettlementEngine} from "../../src/core/SettlementEngine.sol";
 import {FeeDistributor} from "../../src/core/FeeDistributor.sol";
 
 /// @title SettlementEngineTest
+/// @author Aditya Chotaliya [adityachotaliya.xyz]
 /// @notice Tests for epoch-based fee sweeping and the LP/treasury split.
 contract SettlementEngineTest is Phase6Base {
     /// @dev Opens and fully closes a position to generate real, accrued fees in
@@ -153,10 +154,12 @@ contract SettlementEngineTest is Phase6Base {
         _lpDeposit(lp1, 10_000e18);
         _generateFees(); // 20e18
         vm.warp(block.timestamp + DEFAULT_EPOCH_DURATION);
+        _setPrice(2_000e18); // re-anchor the feed's timestamp post-warp (avoids staleness)
         settlement.settle();
 
         _generateFees(); // another 20e18
         vm.warp(block.timestamp + DEFAULT_EPOCH_DURATION);
+        _setPrice(2_000e18); // re-anchor again before the second settle
         (uint256 amount,,) = settlement.settle();
 
         assertEq(amount, 20e18); // only the new fees, not 40
