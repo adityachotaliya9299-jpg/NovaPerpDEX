@@ -4,7 +4,7 @@ pragma solidity ^0.8.26;
 import {RoleManager} from "./RoleManager.sol";
 
 /// @title TWAPOracle
-/// @author Aditya Chotaliya [adityachotaliya.vercel.app]
+/// @author Aditya Chotaliya [adityachotaliya.xyz]
 /// @notice Maintains a time-weighted average price per market from keeper-recorded
 ///         spot observations, à la Uniswap V2 cumulative prices.
 /// @dev Each `record` accrues `lastPrice * elapsed` into a running cumulative, so a
