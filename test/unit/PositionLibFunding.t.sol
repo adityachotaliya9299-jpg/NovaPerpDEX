@@ -6,6 +6,7 @@ import {PositionLib} from "../../src/libraries/PositionLib.sol";
 import {DataTypes} from "../../src/libraries/DataTypes.sol";
 
 /// @title PositionLibFundingTest
+/// @author Aditya Chotaliya [adityachotaliya.xyz]
 /// @notice Tests for the funding-aware equity and liquidation helpers added in Phase 5.
 contract PositionLibFundingTest is Test {
     function _pos(DataTypes.Side side, uint256 size, uint256 collateral, uint256 entry)
