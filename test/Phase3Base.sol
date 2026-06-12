@@ -11,6 +11,7 @@ import {MockV3Aggregator} from "../src/mocks/MockV3Aggregator.sol";
 import {MockOpenInterest} from "../src/mocks/MockOpenInterest.sol";
 
 /// @title Phase3Base
+/// @author Aditya Chotaliya [adityachotaliya.xyz]
 /// @notice Deploys the oracle stack (Chainlink adapter, TWAP, aggregator) and the
 ///         funding engine with a mock OI source, plus a mock Chainlink feed.
 contract Phase3Base is Test {
