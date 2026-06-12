@@ -7,7 +7,7 @@ import {LeverageController} from "../../src/core/LeverageController.sol";
 import {DataTypes} from "../../src/libraries/DataTypes.sol";
 
 /// @title MarginManagerTest
-/// @author Aditya Chotaliya [adityachotaliya.vercel.app]
+/// @author Aditya Chotaliya [adityachotaliya.xyz]
 /// @notice End-to-end unit tests for the position lifecycle: open, increase,
 ///         decrease, close, collateral changes, OI accounting and fees.
 contract MarginManagerTest is Phase2Base {
