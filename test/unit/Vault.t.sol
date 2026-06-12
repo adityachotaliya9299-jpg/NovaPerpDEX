@@ -6,6 +6,7 @@ import {BaseTest} from "../BaseTest.sol";
 import {Vault} from "../../src/core/Vault.sol";
 
 /// @title VaultTest
+/// @author Aditya Chotaliya [adityachotaliya.xyz]
 /// @notice Unit tests for collateral custody, locking and transfers.
 contract VaultTest is BaseTest {
     uint256 internal constant AMT = 1_000e6;

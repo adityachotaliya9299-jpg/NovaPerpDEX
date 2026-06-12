@@ -2,7 +2,7 @@
 pragma solidity ^0.8.26;
 
 /// @title IPriceFeed
-/// @author Aditya Chotaliya [adityachotaliya.vercel.app]
+/// @author Aditya Chotaliya [adityachotaliya.xyz]
 /// @notice Minimal price oracle interface consumed by the protocol.
 /// @dev Phase 3 replaces the mock with a Chainlink + TWAP aggregator that
 ///      conforms to this interface, so downstream contracts never change.

@@ -2,7 +2,7 @@
 pragma solidity ^0.8.26;
 
 /// @title IVault
-/// @author Aditya Chotaliya [adityachotaliya.vercel.app]
+/// @author Aditya Chotaliya [adityachotaliya.xyz]
 /// @notice Interface for the collateral vault that custodies trader deposits.
 interface IVault {
     /// @notice Emitted on a successful collateral deposit.

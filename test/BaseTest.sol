@@ -10,6 +10,7 @@ import {NovaPerpToken} from "../src/core/NovaPerpToken.sol";
 import {MockERC20} from "../src/mocks/MockERC20.sol";
 
 /// @title BaseTest
+/// @author Aditya Chotaliya [adityachotaliya.xyz]
 /// @notice Shared fixture deploying the full Phase 1 stack with sensible roles.
 /// @dev Inherited by every unit/fuzz suite so setup stays DRY and consistent.
 contract BaseTest is Test {

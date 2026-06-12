@@ -6,7 +6,7 @@ import {ERC20Permit} from "@openzeppelin/contracts/token/ERC20/extensions/ERC20P
 import {RoleManager} from "./RoleManager.sol";
 
 /// @title NovaPerpToken
-/// @author Aditya Chotaliya [adityachotaliya.vercel.app]
+/// @author Aditya Chotaliya [adityachotaliya.xyz]
 /// @notice The protocol's native governance + fee-share token (NOVA).
 /// @dev Mintable only by the GOVERNOR_ROLE up to a hard cap, with gasless approvals
 ///      via ERC20Permit. The cap prevents unbounded inflation; minting authority is

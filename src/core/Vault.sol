@@ -8,7 +8,7 @@ import {IVault} from "../interfaces/IVault.sol";
 import {RoleManager} from "./RoleManager.sol";
 
 /// @title Vault
-/// @author Aditya Chotaliya [adityachotaliya.vercel.app]
+/// @author Aditya Chotaliya [adityachotaliya.xyz]
 /// @notice Custodies a single ERC20 collateral token (e.g. USDC) on behalf of traders.
 /// @dev The vault is intentionally "dumb" — it tracks free balances and lets
 ///      OPERATOR_ROLE modules (the margin engine in Phase 2) lock, unlock and

@@ -5,7 +5,7 @@ import {IPriceFeed} from "../interfaces/IPriceFeed.sol";
 import {RoleManager} from "./RoleManager.sol";
 
 /// @title PriceFeed
-/// @author Aditya Chotaliya [adityachotaliya.vercel.app]
+/// @author Aditya Chotaliya [adityachotaliya.xyz]
 /// @notice A keeper-pushed price feed implementing {IPriceFeed}.
 /// @dev In Phase 1 this is the canonical price source; in Phase 3 it is superseded
 ///      by an aggregator that blends Chainlink and an on-chain TWAP. Prices are

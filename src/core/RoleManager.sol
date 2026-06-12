@@ -4,7 +4,7 @@ pragma solidity ^0.8.26;
 import {AccessControl} from "@openzeppelin/contracts/access/AccessControl.sol";
 
 /// @title RoleManager
-/// @author Aditya Chotaliya [adityachotaliya.vercel.app]
+/// @author Aditya Chotaliya [adityachotaliya.xyz]
 /// @notice Central role registry for the protocol.
 /// @dev Other modules inherit or query this to gate privileged actions. Using a
 ///      single registry keeps role definitions consistent and auditable. The

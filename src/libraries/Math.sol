@@ -2,7 +2,7 @@
 pragma solidity ^0.8.26;
 
 /// @title Math
-/// @author Aditya Chotaliya [adityachotaliya.vercel.app]
+/// @author Aditya Chotaliya [adityachotaliya.xyz]
 /// @notice Fixed-point math helpers used across the protocol.
 /// @dev All USD-denominated values use WAD (1e18) precision. Basis points use 1e4.
 library Math {

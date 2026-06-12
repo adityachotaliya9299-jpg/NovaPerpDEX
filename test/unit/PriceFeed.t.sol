@@ -6,6 +6,7 @@ import {BaseTest} from "../BaseTest.sol";
 import {PriceFeed} from "../../src/core/PriceFeed.sol";
 
 /// @title PriceFeedTest
+/// @author Aditya Chotaliya [adityachotaliya.xyz]
 /// @notice Unit tests for keeper-pushed prices and staleness handling.
 contract PriceFeedTest is BaseTest {
     uint256 internal constant PRICE = 2_000e18;

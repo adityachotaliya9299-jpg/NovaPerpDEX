@@ -6,6 +6,7 @@ import {Test} from "forge-std/Test.sol";
 import {Math} from "../../src/libraries/Math.sol";
 
 /// @title MathTest
+/// @author Aditya Chotaliya [adityachotaliya.xyz]
 /// @notice Unit + fuzz tests for the fixed-point math helpers.
 contract MathTest is Test {
     using Math for uint256;

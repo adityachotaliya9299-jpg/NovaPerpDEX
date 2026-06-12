@@ -4,7 +4,7 @@ pragma solidity ^0.8.26;
 import {ERC20} from "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 
 /// @title MockERC20
-/// @author Aditya Chotaliya [adityachotaliya.vercel.app]
+/// @author Aditya Chotaliya [adityachotaliya.xyz]
 /// @notice A freely-mintable ERC20 used as test collateral (stands in for USDC).
 /// @dev Supports configurable decimals so tests can exercise non-18-decimal tokens.
 contract MockERC20 is ERC20 {
