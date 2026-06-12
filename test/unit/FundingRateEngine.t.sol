@@ -7,6 +7,7 @@ import {MockOpenInterest} from "../../src/mocks/MockOpenInterest.sol";
 import {DataTypes} from "../../src/libraries/DataTypes.sol";
 
 /// @title FundingRateEngineTest
+/// @author Aditya Chotaliya [adityachotaliya.xyz]
 /// @notice Unit + fuzz tests for skew-based funding rates and the cumulative index.
 contract FundingRateEngineTest is Phase3Base {
     uint256 internal constant MAX_RATE = 1e12; // per second, set in Phase3Base
