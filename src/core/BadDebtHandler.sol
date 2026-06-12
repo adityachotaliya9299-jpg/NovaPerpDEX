@@ -5,7 +5,7 @@ import {IBadDebtHandler} from "../interfaces/IBadDebtHandler.sol";
 import {RoleManager} from "./RoleManager.sol";
 
 /// @title BadDebtHandler
-/// @author Aditya Chotaliya [adityachotaliya.vercel.app]
+/// @author Aditya Chotaliya [adityachotaliya.xyz]
 /// @notice Accounts for bad debt that the insurance fund could not cover during a
 ///         liquidation. Recorded bad debt is socialized against LP equity in Phase 6.
 /// @dev Pure accounting — it holds no funds. `recordBadDebt` is called by the
