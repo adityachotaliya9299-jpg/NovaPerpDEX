@@ -5,6 +5,7 @@ import {Phase6Base} from "../Phase6Base.sol";
 import {LPVault} from "../../src/core/LPVault.sol";
 
 /// @title LPVaultTest
+/// @author Aditya Chotaliya [adityachotaliya.xyz]
 /// @notice Unit + fuzz tests for ERC4626-style share accounting over the protocol vault.
 contract LPVaultTest is Phase6Base {
     // ----------------------------- deposit ------------------------------ //
@@ -56,12 +57,18 @@ contract LPVaultTest is Phase6Base {
     function test_PartialWithdraw() public {
         _lpDeposit(lp1, 10_000e18);
         uint256 lp1Shares = lpVault.balanceOf(lp1);
+        uint256 redeemShares = lp1Shares / 2;
+
+        // lp1Shares = 10_000e18 - MIN_FIRST_DEPOSIT, so half is offset from a clean
+        // 5000e18 by half of MIN_FIRST_DEPOSIT (integer division of an odd share count).
+        uint256 expected = redeemShares * lpVault.totalAssets() / lpVault.totalSupply();
 
         vm.prank(lp1);
-        uint256 assets = lpVault.withdraw(lp1Shares / 2);
+        uint256 assets = lpVault.withdraw(redeemShares);
 
-        assertEq(lpVault.balanceOf(lp1), lp1Shares - lp1Shares / 2);
-        assertApproxEqAbs(assets, 5_000e18, 1);
+        assertEq(lpVault.balanceOf(lp1), lp1Shares - redeemShares);
+        assertEq(assets, expected);
+        assertApproxEqAbs(assets, 5_000e18, lpVault.MIN_FIRST_DEPOSIT());
     }
 
     function test_RevertWhen_WithdrawMoreThanBalance() public {
@@ -127,19 +134,25 @@ contract LPVaultTest is Phase6Base {
     }
 
     function test_DonateBenefitsExistingLPsProportionally() public {
-        _lpDeposit(lp1, 10_000e18);
-        _lpDeposit(lp2, 10_000e18);
+        _lpDeposit(lp1, 10_000e18); // first depositor: pays MIN_FIRST_DEPOSIT in dead shares
+        _lpDeposit(lp2, 10_000e18); // second depositor: full 10_000e18 worth of shares
 
         usd.mint(address(this), 2_000e18);
         usd.approve(address(lpVault), 2_000e18);
         lpVault.donate(2_000e18);
 
-        // both LPs' shares are now worth more
+        // both LPs' shares are now worth more than their deposit
         uint256 lp1Assets = lpVault.previewRedeem(lpVault.balanceOf(lp1));
         uint256 lp2Assets = lpVault.previewRedeem(lpVault.balanceOf(lp2));
         assertGt(lp1Assets, 10_000e18);
         assertGt(lp2Assets, 10_000e18);
-        assertApproxEqAbs(lp1Assets, lp2Assets, 2);
+
+        // lp1 holds exactly MIN_FIRST_DEPOSIT fewer shares than lp2 (the permanent,
+        // one-time cost of being first depositor), so its redeemable value is lower
+        // by that same share count's worth of the post-donation share price.
+        uint256 sharePrice = lpVault.sharePrice();
+        uint256 expectedGap = lpVault.MIN_FIRST_DEPOSIT() * sharePrice / 1e18;
+        assertApproxEqAbs(lp2Assets - lp1Assets, expectedGap, 1);
     }
 
     function test_RevertWhen_DonateZero() public {
