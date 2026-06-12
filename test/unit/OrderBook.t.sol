@@ -6,6 +6,7 @@ import {OrderBook} from "../../src/core/OrderBook.sol";
 import {DataTypes} from "../../src/libraries/DataTypes.sol";
 
 /// @title OrderBookTest
+/// @author Aditya Chotaliya [adityachotaliya.xyz]
 /// @notice Tests for limit order placement, cancellation, execution and edge cases.
 contract OrderBookTest is Phase5Base {
     function _placeDefaultOrder() internal returns (uint256 orderId) {
