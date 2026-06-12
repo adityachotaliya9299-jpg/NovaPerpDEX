@@ -2,7 +2,7 @@
 pragma solidity ^0.8.26;
 
 /// @title DataTypes
-/// @author Aditya Chotaliya [adityachotaliya.vercel.app]
+/// @author Aditya Chotaliya [adityachotaliya.xyz]
 /// @notice Canonical structs, enums and constants shared across the protocol.
 /// @dev Keeping these in one library guarantees a single source of truth for the
 ///      storage shapes used by the margin engine, liquidation engine and frontend.
