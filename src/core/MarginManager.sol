@@ -193,7 +193,7 @@ contract MarginManager {
         DataTypes.Side side,
         uint256 sizeDelta,
         uint256 collateralDelta
-    ) external whenNotPaused { {
+    ) external whenNotPaused { 
         _increase(msg.sender, market, side, sizeDelta, collateralDelta);
     }
 
