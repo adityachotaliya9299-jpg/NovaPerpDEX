@@ -5,6 +5,7 @@ import {Phase4Base} from "../Phase4Base.sol";
 import {CollateralVault} from "../../src/core/CollateralVault.sol";
 
 /// @title CollateralVaultLiquidationTest
+/// @author Aditya Chotaliya [adityachotaliya.xyz]
 /// @notice Guard tests for the CollateralVault.liquidate wiring requirements, exercised
 ///         on fresh vaults with the test contract granted OPERATOR_ROLE.
 contract CollateralVaultLiquidationTest is Phase4Base {
