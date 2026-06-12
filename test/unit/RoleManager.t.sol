@@ -7,6 +7,7 @@ import {RoleManager} from "../../src/core/RoleManager.sol";
 import {IAccessControl} from "@openzeppelin/contracts/access/IAccessControl.sol";
 
 /// @title RoleManagerTest
+/// @author Aditya Chotaliya [adityachotaliya.xyz]
 /// @notice Unit tests for role registry behaviour.
 contract RoleManagerTest is BaseTest {
     function test_AdminHasDefaultAdminRole() public view {
