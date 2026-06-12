@@ -5,6 +5,7 @@ import {Phase4Base} from "../Phase4Base.sol";
 import {LiquidationBot} from "../../src/core/LiquidationBot.sol";
 
 /// @title LiquidationBotTest
+/// @author Aditya Chotaliya [adityachotaliya.xyz]
 /// @notice Tests for batch liquidation and keeper-reward attribution.
 contract LiquidationBotTest is Phase4Base {
     function _setupTwoUnderwater() internal {
