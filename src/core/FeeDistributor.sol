@@ -6,6 +6,7 @@ import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol
 import {Math} from "../libraries/Math.sol";
 import {RoleManager} from "./RoleManager.sol";
 import {Vault} from "./Vault.sol";
+import {LPVault} from "./LPVault.sol";
 
 /// @title FeeDistributor
 /// @author Aditya Chotaliya [adityachotaliya.xyz]
@@ -42,6 +43,7 @@ contract FeeDistributor {
     event FeesCollected(address indexed to, uint256 amount);
     event PositionFeeSet(uint256 bps);
     event TreasurySet(address treasury);
+    event FeesSplit(address indexed lpVault, uint256 lpShare, uint256 treasuryShare);
 
     error NotOperator(address caller);
     error NotGovernor(address caller);
@@ -101,6 +103,44 @@ contract FeeDistributor {
         vault.withdraw(amount); // vault sends tokens to this contract
         collateralToken.safeTransfer(treasury, amount);
         emit FeesCollected(treasury, amount);
+    }
+
+
+    /// @notice Pulls `amount` out of the vault and splits it between `lpVault` and the
+    ///         treasury by `lpShareBps`. Governor-only (intended caller: a
+    ///         {SettlementEngine} granted GOVERNOR_ROLE for epoch settlement).
+    /// @dev The LP share is routed via `LPVault.donate`, which deposits it into the
+    ///      protocol vault on the LPVault's behalf without minting shares — this is
+    ///      what actually raises `totalAssets()` and therefore share price for all LPs.
+    ///      A bare ERC20 transfer to the LPVault's address would NOT do this (the
+    ///      tokens would sit untracked), so `donate` is the only correct path.
+    function collectAndSplit(uint256 amount, address lpVault, uint256 lpShareBps)
+        external
+        onlyGovernor
+        returns (uint256 lpShare, uint256 treasuryShare)
+    {
+        if (lpShareBps > Math.BPS_DENOMINATOR) revert FeeTooHigh(lpShareBps);
+        lpShare = amount.bps(lpShareBps);
+        treasuryShare = amount - lpShare;
+
+        vault.withdraw(amount); // entire amount lands here as raw tokens
+
+        // If no LPs exist yet, donate() would revert; route the LP share to treasury
+        // instead so epoch settlement never strands funds or blocks on an empty pool.
+        if (lpShare > 0 && LPVault(lpVault).totalSupply() == 0) {
+            treasuryShare += lpShare;
+            lpShare = 0;
+        }
+
+        if (lpShare > 0) {
+            collateralToken.forceApprove(lpVault, lpShare);
+            LPVault(lpVault).donate(lpShare);
+        }
+        if (treasuryShare > 0) {
+            collateralToken.safeTransfer(treasury, treasuryShare);
+        }
+        emit FeesCollected(treasury, treasuryShare);
+        emit FeesSplit(lpVault, lpShare, treasuryShare);
     }
 
     /// @notice Sets the position fee (bounded by MAX_POSITION_FEE_BPS). Governor-only.
