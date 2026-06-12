@@ -6,7 +6,7 @@ import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol
 import {Math} from "../libraries/Math.sol";
 import {RoleManager} from "./RoleManager.sol";
 import {Vault} from "./Vault.sol";
-import {LPVault} from "./LPVault.sol";
+import {LPVault} from "../core/LPVault.sol";
 
 /// @title FeeDistributor
 /// @author Aditya Chotaliya [adityachotaliya.xyz]
