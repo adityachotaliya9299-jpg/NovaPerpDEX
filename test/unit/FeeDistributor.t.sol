@@ -1,12 +1,12 @@
 // SPDX-License-Identifier: MIT
-pragma solidity 0.8.26;
+pragma solidity ^0.8.26;
 
 import {Phase2Base} from "../Phase2Base.sol";
 import {FeeDistributor} from "../../src/core/FeeDistributor.sol";
 import {DataTypes} from "../../src/libraries/DataTypes.sol";
 
 /// @title FeeDistributorTest
-/// @author Aditya Chotaliya [adityachotaliya.vercel.app]
+/// @author Aditya Chotaliya [adityachotaliya.xyz]
 /// @notice Unit + fuzz tests for fee pricing, accrual and collection.
 contract FeeDistributorTest is Phase2Base {
     function test_InitialConfig() public view {
