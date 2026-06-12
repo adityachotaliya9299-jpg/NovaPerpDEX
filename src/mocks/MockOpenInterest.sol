@@ -4,7 +4,7 @@ pragma solidity ^0.8.26;
 import {IOpenInterest} from "../interfaces/IOpenInterest.sol";
 
 /// @title MockOpenInterest
-/// @author Aditya Chotaliya [adityachotaliya.vercel.app]
+/// @author Aditya Chotaliya [adityachotaliya.xyz]
 /// @notice Settable open-interest source so the FundingRateEngine can be tested
 ///         without deploying the full MarginManager.
 contract MockOpenInterest is IOpenInterest {
