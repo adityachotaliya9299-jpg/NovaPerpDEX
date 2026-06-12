@@ -13,7 +13,7 @@ import {FundingRateEngine} from "./FundingRateEngine.sol";
 import {RiskManager} from "./RiskManager.sol";
 
 /// @title MarginManager
-/// @author Aditya Chotaliya [adityachotaliya.vercel.app]
+/// @author Aditya Chotaliya [adityachotaliya.xyz]
 /// @notice The trading entry point: opens, increases, decreases and closes leveraged
 ///         perpetual positions.
 /// @dev Owns position state and open-interest accounting, reads marks from the
