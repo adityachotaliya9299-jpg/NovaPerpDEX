@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-pragma solidity 0.8.26;
+pragma solidity ^0.8.26;
 
 import {Test} from "forge-std/Test.sol";
 import {Vault} from "../../src/core/Vault.sol";
@@ -9,6 +9,7 @@ import {MockERC20} from "../../src/mocks/MockERC20.sol";
 import {DataTypes} from "../../src/libraries/DataTypes.sol";
 import {Phase2Base} from "../Phase2Base.sol";
 
+/// @author Aditya Chotaliya [adityachotaliya.xyz]
 /// @notice Drives randomized open / close / price flows across two traders.
 /// @dev Holds direct typed references to the deployed contracts and pranks the
 ///      traders itself. Trades that violate risk rules simply revert and are
