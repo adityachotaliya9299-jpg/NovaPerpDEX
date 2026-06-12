@@ -5,6 +5,7 @@ import {Phase4Base} from "../Phase4Base.sol";
 import {InsuranceFund} from "../../src/core/InsuranceFund.sol";
 
 /// @title InsuranceFundTest
+/// @author Aditya Chotaliya [adityachotaliya.xyz]
 /// @notice Unit tests for seeding, withdrawal and balance accounting.
 contract InsuranceFundTest is Phase4Base {
     function test_SeededInSetup() public view {
