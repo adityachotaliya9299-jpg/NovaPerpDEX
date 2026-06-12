@@ -8,7 +8,7 @@ import {RoleManager} from "./RoleManager.sol";
 import {Vault} from "./Vault.sol";
 
 /// @title FeeDistributor
-/// @author Aditya Chotaliya [adityachotaliya.vercel.app]
+/// @author Aditya Chotaliya [adityachotaliya.xyz]
 /// @notice Tracks and routes the position fees charged by the margin engine.
 /// @dev Fees physically land as this contract's *free* balance inside the {Vault}
 ///      (moved there by the CollateralVault during open/settle). `accrue` records the
