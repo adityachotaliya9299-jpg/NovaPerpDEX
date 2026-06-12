@@ -7,7 +7,7 @@ import {IOpenInterest} from "../interfaces/IOpenInterest.sol";
 import {RoleManager} from "./RoleManager.sol";
 
 /// @title FundingRateEngine
-/// @author Aditya Chotaliya [adityachotaliya.vercel.app]
+/// @author Aditya Chotaliya [adityachotaliya.xyz]
 /// @notice Computes and accrues perpetual funding based on long/short open-interest
 ///         skew, the mechanism that tethers the perp price to the index.
 /// @dev Funding accrues into a per-market cumulative index (signed, WAD). A position
