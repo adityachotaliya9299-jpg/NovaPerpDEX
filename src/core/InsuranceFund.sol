@@ -7,7 +7,7 @@ import {RoleManager} from "./RoleManager.sol";
 import {Vault} from "./Vault.sol";
 
 /// @title InsuranceFund
-/// @author Aditya Chotaliya [adityachotaliya.vercel.app]
+/// @author Aditya Chotaliya [adityachotaliya.xyz]
 /// @notice Holds a reserve of locked collateral used to cover liquidation shortfalls
 ///         before any bad debt is socialized to liquidity providers.
 /// @dev The fund's balance is simply its *locked* balance inside the {Vault}; the
