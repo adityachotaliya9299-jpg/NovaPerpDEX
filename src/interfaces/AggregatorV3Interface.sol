@@ -2,7 +2,7 @@
 pragma solidity ^0.8.26;
 
 /// @title AggregatorV3Interface
-/// @author Aditya Chotaliya [adityachotaliya.vercel.app]
+/// @author Aditya Chotaliya [adityachotaliya.xyz]
 /// @notice Minimal Chainlink price-feed interface consumed by {ChainlinkAdapter}.
 /// @dev Matches Chainlink's canonical AggregatorV3Interface so production feeds
 ///      plug in directly. Declared locally to avoid an external dependency.
