@@ -13,7 +13,7 @@ import {MockERC20} from "../src/mocks/MockERC20.sol";
 import {DataTypes} from "../src/libraries/DataTypes.sol";
 
 /// @title Phase2Base
-/// @author Aditya Chotaliya [adityachotaliya.vercel.app]
+/// @author Aditya Chotaliya [adityachotaliya.xyz]
 /// @notice Deploys the full margin-engine stack on an 18-decimal USD collateral token
 ///         and wires roles, market config and a funded counterparty pool.
 /// @dev The protocol collateral is an 18-dec USD stable so that vault units map 1:1 to
