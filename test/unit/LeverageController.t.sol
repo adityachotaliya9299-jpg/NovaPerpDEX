@@ -1,12 +1,12 @@
 // SPDX-License-Identifier: MIT
-pragma solidity 0.8.26;
+pragma solidity ^0.8.26;
 
 import {Phase2Base} from "../Phase2Base.sol";
 import {LeverageController} from "../../src/core/LeverageController.sol";
 import {DataTypes} from "../../src/libraries/DataTypes.sol";
 
 /// @title LeverageControllerTest
-/// @author Aditya Chotaliya [adityachotaliya.vercel.app]
+/// @author Aditya Chotaliya [adityachotaliya.xyz]
 /// @notice Unit + fuzz tests for market registry and leverage validation.
 contract LeverageControllerTest is Phase2Base {
     bytes32 internal constant BTC_USD = keccak256("BTC-USD");
