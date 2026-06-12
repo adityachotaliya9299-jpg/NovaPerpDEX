@@ -6,7 +6,7 @@ import {Math} from "../libraries/Math.sol";
 import {RoleManager} from "./RoleManager.sol";
 
 /// @title RiskManager
-/// @author Aditya Chotaliya [adityachotaliya.vercel.app]
+/// @author Aditya Chotaliya [adityachotaliya.xyz]
 /// @notice Per-market skew limits and skew-scaled dynamic fees.
 contract RiskManager {
     using Math for uint256;
