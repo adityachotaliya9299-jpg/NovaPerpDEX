@@ -11,6 +11,9 @@ import {CollateralVault} from "./CollateralVault.sol";
 import {FeeDistributor} from "./FeeDistributor.sol";
 import {FundingRateEngine} from "./FundingRateEngine.sol";
 import {RiskManager} from "./RiskManager.sol";
+import {FundingRateEngine} from "./FundingRateEngine.sol";
+import {RiskManager} from "./RiskManager.sol";
+import {EmergencyController} from "./EmergencyController.sol";
 
 /// @title MarginManager
 /// @author Aditya Chotaliya [adityachotaliya.xyz]
@@ -41,6 +44,9 @@ contract MarginManager {
 
     /// @notice Optional risk manager; when set, applies skew limits + dynamic fees.
     RiskManager public riskManager;
+
+    /// @notice Optional emergency controller; when set, gates the trade path.
+    EmergencyController public emergencyController;
 
     /// @notice Addresses permitted to trade on behalf of users (routers, order books).
     mapping(address => bool) public authorizedRouter;
@@ -84,6 +90,7 @@ contract MarginManager {
     error NotLiquidatable(bytes32 key);
     error NotGovernor(address caller);
     error NotRouter(address caller);
+    error ProtocolPaused();
 
     event PositionLiquidated(
         bytes32 indexed key,
@@ -97,6 +104,7 @@ contract MarginManager {
     event FundingEngineSet(address engine);
     event RiskManagerSet(address riskManager);
     event RouterSet(address router, bool allowed);
+    event EmergencyControllerSet(address controller);
 
     modifier onlyGovernor() {
         if (!roles.isGovernor(msg.sender)) revert NotGovernor(msg.sender);
@@ -105,6 +113,15 @@ contract MarginManager {
 
     modifier onlyRouter() {
         if (!authorizedRouter[msg.sender]) revert NotRouter(msg.sender);
+        _;
+    }
+
+    /// @dev Reverts if the protocol-wide circuit breaker is engaged. A no-op when no
+    ///      {EmergencyController} is wired, preserving earlier-phase behavior exactly.
+    modifier whenNotPaused() {
+        if (address(emergencyController) != address(0) && emergencyController.isPaused()) {
+            revert ProtocolPaused();
+        }
         _;
     }
 
@@ -147,6 +164,11 @@ contract MarginManager {
         emit RouterSet(router, allowed);
     }
 
+    function setEmergencyController(address controller) external onlyGovernor {
+        emergencyController = EmergencyController(controller);
+        emit EmergencyControllerSet(controller);
+    }
+
     /// @notice Deterministic key for a position.
     function positionKey(address account, bytes32 market, DataTypes.Side side)
         public
@@ -171,7 +193,7 @@ contract MarginManager {
         DataTypes.Side side,
         uint256 sizeDelta,
         uint256 collateralDelta
-    ) external {
+    ) external whenNotPaused { {
         _increase(msg.sender, market, side, sizeDelta, collateralDelta);
     }
 
@@ -182,7 +204,7 @@ contract MarginManager {
         DataTypes.Side side,
         uint256 sizeDelta,
         uint256 collateralDelta
-    ) external onlyRouter {
+    ) external onlyRouter whenNotPaused {
         _increase(account, market, side, sizeDelta, collateralDelta);
     }
 
