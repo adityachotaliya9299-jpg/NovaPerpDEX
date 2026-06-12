@@ -10,6 +10,7 @@ import {StopLossManager} from "../src/core/StopLossManager.sol";
 import {DataTypes} from "../src/libraries/DataTypes.sol";
 
 /// @title Phase5Base
+/// @author Aditya Chotaliya [adityachotaliya.xyz]
 /// @notice Extends the Phase 4 stack with funding, risk management and the execution
 ///         contracts (router, order book, stop-loss), all wired into the MarginManager.
 /// @dev Funding is initialized with a ZERO max rate so it is neutral by default — tests
