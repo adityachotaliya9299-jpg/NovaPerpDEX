@@ -6,7 +6,7 @@ import {Math} from "../libraries/Math.sol";
 import {RoleManager} from "./RoleManager.sol";
 
 /// @title LeverageController
-/// @author Aditya Chotaliya [adityachotaliya.vercel.app]
+/// @author Aditya Chotaliya [adityachotaliya.xyz]
 /// @notice Owns per-market risk configuration and validates leverage / collateral
 ///         constraints for the margin engine.
 /// @dev Stateful registry of {DataTypes.MarketConfig}. The margin engine calls the
