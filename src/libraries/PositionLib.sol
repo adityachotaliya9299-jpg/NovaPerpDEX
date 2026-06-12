@@ -5,7 +5,7 @@ import {DataTypes} from "./DataTypes.sol";
 import {Math} from "./Math.sol";
 
 /// @title PositionLib
-/// @author Aditya Chotaliya [adityachotaliya.vercel.app]
+/// @author Aditya Chotaliya [adityachotaliya.xyz]
 /// @notice Pure functions describing the economics of a perpetual position.
 /// @dev Stateless by design so it can be unit/fuzz tested in isolation and reused
 ///      by the margin, liquidation and risk engines without storage coupling.
