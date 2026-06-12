@@ -26,7 +26,6 @@ library PositionLib {
     {
         if (p.size == 0 || p.entryPrice == 0) return 0;
 
-        // priceDelta as a signed WAD ratio of the move relative to entry.
         if (p.side == DataTypes.Side.LONG) {
             if (currentPrice >= p.entryPrice) {
                 uint256 gain = p.size.wmul((currentPrice - p.entryPrice).wdiv(p.entryPrice));
@@ -104,7 +103,42 @@ library PositionLib {
     ) internal pure returns (uint256) {
         uint256 totalSize = oldSize + addSize;
         if (totalSize == 0) return 0;
-        // weighted by notional: (oldSize*oldEntry + addSize*addPrice) / totalSize
         return (oldSize * oldEntry + addSize * addPrice) / totalSize;
+    }
+
+    /// @notice Size-weighted blend of a signed funding index when increasing a position.
+    /// @dev Keeps `size * (indexNow - entryIndex)` correct across an increase.
+    function blendedFundingIndex(
+        uint256 oldSize,
+        int256 oldIndex,
+        uint256 addSize,
+        int256 addIndex
+    ) internal pure returns (int256) {
+        uint256 totalSize = oldSize + addSize;
+        if (totalSize == 0) return 0;
+        return (oldIndex * int256(oldSize) + addIndex * int256(addSize)) / int256(totalSize);
+    }
+
+    /// @notice Equity after applying signed funding owed (positive => position pays).
+    /// @dev equity = collateral + unrealizedPnl - fundingOwed, floored at zero.
+    function equityAfterFunding(
+        DataTypes.Position memory p,
+        uint256 currentPrice,
+        int256 fundingOwed
+    ) internal pure returns (uint256) {
+        int256 e = int256(p.collateral) + unrealizedPnl(p, currentPrice) - fundingOwed;
+        return e <= 0 ? 0 : uint256(e);
+    }
+
+    /// @notice Liquidation check that accounts for funding owed.
+    function isLiquidatableWithFunding(
+        DataTypes.Position memory p,
+        uint256 currentPrice,
+        uint256 maintenanceMarginBps,
+        int256 fundingOwed
+    ) internal pure returns (bool) {
+        if (p.size == 0) return false;
+        uint256 e = equityAfterFunding(p, currentPrice, fundingOwed);
+        return e < p.size.bps(maintenanceMarginBps);
     }
 }
