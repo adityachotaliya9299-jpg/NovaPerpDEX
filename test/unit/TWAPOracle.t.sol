@@ -5,6 +5,7 @@ import {Phase3Base} from "../Phase3Base.sol";
 import {TWAPOracle} from "../../src/core/TWAPOracle.sol";
 
 /// @title TWAPOracleTest
+/// @author Aditya Chotaliya [adityachotaliya.xyz]
 /// @notice Unit tests for time-weighted average pricing and manipulation resistance.
 contract TWAPOracleTest is Phase3Base {
     function setUp() public override {
