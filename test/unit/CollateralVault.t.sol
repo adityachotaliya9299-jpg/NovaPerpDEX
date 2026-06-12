@@ -6,7 +6,7 @@ import {CollateralVault} from "../../src/core/CollateralVault.sol";
 import {DataTypes} from "../../src/libraries/DataTypes.sol";
 
 /// @title CollateralVaultTest
-/// @author Aditya Chotaliya [adityachotaliya.vercel.app]
+/// @author Aditya Chotaliya [adityachotaliya.xyz]
 /// @notice Unit tests for reservation, margin mode and settlement bookkeeping.
 /// @dev Calls into CollateralVault directly while impersonating the MarginManager
 ///      (which holds OPERATOR_ROLE) to test the money-movement layer in isolation.
