@@ -5,6 +5,7 @@ import {Phase3Base} from "../Phase3Base.sol";
 import {OracleAggregator} from "../../src/core/OracleAggregator.sol";
 
 /// @title OracleAggregatorTest
+/// @author Aditya Chotaliya [adityachotaliya.xyz]
 /// @notice Unit tests for source combination, the deviation guard and fallback.
 contract OracleAggregatorTest is Phase3Base {
     function setUp() public override {
