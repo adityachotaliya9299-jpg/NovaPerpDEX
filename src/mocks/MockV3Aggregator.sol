@@ -4,7 +4,7 @@ pragma solidity ^0.8.26;
 import {AggregatorV3Interface} from "../interfaces/AggregatorV3Interface.sol";
 
 /// @title MockV3Aggregator
-/// @author Aditya Chotaliya [adityachotaliya.vercel.app]
+/// @author Aditya Chotaliya [adityachotaliya.xyz]
 /// @notice Settable Chainlink-style aggregator for tests.
 /// @dev Lets tests drive answer, decimals, round id and timestamps to exercise the
 ///      adapter's staleness, sign and round-completeness checks.
