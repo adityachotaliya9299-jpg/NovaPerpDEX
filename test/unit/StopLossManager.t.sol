@@ -6,6 +6,7 @@ import {StopLossManager} from "../../src/core/StopLossManager.sol";
 import {DataTypes} from "../../src/libraries/DataTypes.sol";
 
 /// @title StopLossManagerTest
+/// @author Aditya Chotaliya [adityachotaliya.xyz]
 /// @notice Tests for stop-loss / take-profit triggers.
 contract StopLossManagerTest is Phase5Base {
     function _openAndSetStop(uint256 triggerPrice, bool triggerAbove)
