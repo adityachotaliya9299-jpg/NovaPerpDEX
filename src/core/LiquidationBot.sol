@@ -6,7 +6,7 @@ import {MarginManager} from "./MarginManager.sol";
 import {LiquidationEngine} from "./LiquidationEngine.sol";
 
 /// @title LiquidationBot
-/// @author Aditya Chotaliya [adityachotaliya.vercel.app]
+/// @author Aditya Chotaliya [adityachotaliya.xyz]
 /// @notice On-chain batch keeper: scans a set of accounts and liquidates the eligible
 ///         ones in a single transaction, directing all keeper rewards to one recipient.
 /// @dev A convenience wrapper over {LiquidationEngine}. Eligibility is checked per
