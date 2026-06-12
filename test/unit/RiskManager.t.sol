@@ -6,6 +6,7 @@ import {RiskManager} from "../../src/core/RiskManager.sol";
 import {DataTypes} from "../../src/libraries/DataTypes.sol";
 
 /// @title RiskManagerTest
+/// @author Aditya Chotaliya [adityachotaliya.xyz]
 /// @notice Unit + fuzz tests for skew limits and skew-scaled dynamic fees.
 contract RiskManagerTest is Phase5Base {
     function _config(uint256 maxSkew, uint256 base, uint256 dynamic) internal {
