@@ -9,7 +9,7 @@ import {LiquidationBot} from "../src/core/LiquidationBot.sol";
 import {DataTypes} from "../src/libraries/DataTypes.sol";
 
 /// @title Phase4Base
-/// @author Aditya Chotaliya [adityachotaliya.vercel.app]
+/// @author Aditya Chotaliya [adityachotaliya.xyz]
 /// @notice Extends the Phase 2 margin stack with the liquidation system: insurance
 ///         fund, bad-debt handler, liquidation engine and batch bot — all wired and
 ///         with a seeded insurance reserve.
