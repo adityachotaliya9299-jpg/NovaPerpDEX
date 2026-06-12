@@ -101,7 +101,9 @@ contract PositionLibFundingTest is Test {
 
     function testFuzz_EquityAfterFundingNeverNegative(uint256 price, int256 funding) public view {
         price = bound(price, 1, 1_000_000e18);
-        funding = int256(bound(uint256(funding > 0 ? funding : -funding), 0, 1e30));
+        // Bound symmetrically, well within int256 range, so collateral - funding
+        // (the addition inside equityAfterFunding) cannot itself overflow.
+        funding = bound(funding, -1e30, 1e30);
         DataTypes.Position memory p = _pos(DataTypes.Side.LONG, 10_000e18, 1_000e18, 2_000e18);
         uint256 e = PositionLib.equityAfterFunding(p, price, funding);
         // equity is always uint — floored at 0
@@ -109,7 +111,9 @@ contract PositionLibFundingTest is Test {
     }
 
     function testFuzz_LiquidationWithFundingMonotonic(int256 extraFunding) public view {
-        extraFunding = int256(bound(uint256(extraFunding > 0 ? extraFunding : -extraFunding), 0, 2_000e18));
+        // Only the *more positive* direction is meaningful for this monotonicity claim
+        // (a negative fundingOwed is a payout to the trader, which can only help health).
+        extraFunding = bound(extraFunding, 0, 2_000e18);
         DataTypes.Position memory p = _pos(DataTypes.Side.LONG, 10_000e18, 1_000e18, 2_000e18);
         bool liqAtZero = PositionLib.isLiquidatableWithFunding(p, 2_000e18, 200, 0);
         bool liqWithMore = PositionLib.isLiquidatableWithFunding(p, 2_000e18, 200, extraFunding);
