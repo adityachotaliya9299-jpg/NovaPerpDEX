@@ -6,7 +6,7 @@ import {IPriceFeed} from "../interfaces/IPriceFeed.sol";
 import {MarginManager} from "./MarginManager.sol";
 
 /// @title StopLossManager
-/// @author Aditya Chotaliya [adityachotaliya.vercel.app]
+/// @author Aditya Chotaliya [adityachotaliya.xyz]
 /// @notice Stop-loss / take-profit triggers that fully close a position when the mark
 ///         crosses a level. One trigger per (account, market, side).
 contract StopLossManager {
