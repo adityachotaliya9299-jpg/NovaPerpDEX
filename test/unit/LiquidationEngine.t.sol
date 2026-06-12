@@ -7,6 +7,7 @@ import {MarginManager} from "../../src/core/MarginManager.sol";
 import {DataTypes} from "../../src/libraries/DataTypes.sol";
 
 /// @title LiquidationEngineTest
+/// @author Aditya Chotaliya [adityachotaliya.xyz]
 /// @notice End-to-end tests for liquidation: loss routing, keeper reward, insurance
 ///         cover, bad-debt socialization, and engine access controls.
 contract LiquidationEngineTest is Phase4Base {
