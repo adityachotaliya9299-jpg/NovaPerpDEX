@@ -11,6 +11,7 @@ contract FundingIntegrationTest is Phase5Base {
     function setUp() public override {
         super.setUp();
         vm.warp(1_000_000); // base timestamp so funding/price math is clean
+        _setPrice(2_000e18); // re-anchor the feed's timestamp post-warp (avoids staleness)
     }
 
     function test_LongPaysFundingOnClose() public {
