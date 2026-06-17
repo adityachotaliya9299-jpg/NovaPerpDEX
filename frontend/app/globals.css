@@ -1,0 +1,53 @@
+@import "tailwindcss";
+
+:root {
+  /* Surfaces — deep blue-slate, cooler than pure black (trading-terminal feel) */
+  --bg-base: #0a0e17;
+  --bg-surface: #131825;
+  --bg-elevated: #1c2333;
+  --border: #2a3346;
+
+  /* Text */
+  --text-primary: #e7eaf0;
+  --text-muted: #8b95ab;
+
+  /* Signal colors — functionally meaningful, not decorative */
+  --accent-long: #3ddc97; /* longs, profit, healthy */
+  --accent-short: #ff6b6b; /* shorts, loss, danger */
+  --accent-warn: #ffb86b; /* funding, liquidation warnings */
+  --accent-info: #6c8eff; /* interactive elements, links */
+}
+
+@theme inline {
+  --color-bg-base: var(--bg-base);
+  --color-bg-surface: var(--bg-surface);
+  --color-bg-elevated: var(--bg-elevated);
+  --color-border: var(--border);
+  --color-text-primary: var(--text-primary);
+  --color-text-muted: var(--text-muted);
+  --color-accent-long: var(--accent-long);
+  --color-accent-short: var(--accent-short);
+  --color-accent-warn: var(--accent-warn);
+  --color-accent-info: var(--accent-info);
+
+  /* All numeric values (prices, sizes, PnL) render in monospace — the one
+     signature typographic choice for a trading terminal. System stacks avoid
+     a Google Fonts network dependency entirely. */
+  --font-sans:
+    ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  --font-mono:
+    ui-monospace, "SF Mono", "Cascadia Code", "Roboto Mono", Menlo, Consolas, monospace;
+}
+
+body {
+  background: var(--bg-base);
+  color: var(--text-primary);
+  font-family: var(--font-sans);
+}
+
+/* Tabular numeric alignment everywhere numbers appear in columns. */
+.font-mono,
+.tabular-nums {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+}
