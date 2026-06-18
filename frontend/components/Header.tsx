@@ -4,6 +4,7 @@ import { ConnectButton } from "@rainbow-me/rainbowkit";
 import { useReadContract } from "wagmi";
 import { contracts, ETH_USD_MARKET } from "@/lib/contracts";
 import { formatPrice } from "@/lib/utils/format";
+import { RefreshPrice } from "@/components/RefreshPrice";
 
 export function Header() {
   const { data: price } = useReadContract({
@@ -19,7 +20,6 @@ export function Header() {
       style={{ borderColor: "var(--border)", background: "var(--bg-surface)" }}
     >
       <div className="max-w-screen-xl mx-auto px-4 h-14 flex items-center justify-between">
-        {/* Left: logo + market */}
         <div className="flex items-center gap-6">
           <span
             className="text-sm font-semibold tracking-widest uppercase"
@@ -41,15 +41,17 @@ export function Header() {
             </div>
             <span
               className="font-mono text-base font-semibold tabular-nums"
-              style={{ color: "var(--text-primary)" }}
+              style={{ color: price ? "var(--text-primary)" : "var(--accent-warn)" }}
             >
-              {price ? formatPrice(price) : "—"}
+              {price ? formatPrice(price) : "stale"}
             </span>
           </div>
         </div>
 
-        {/* Right: connect button */}
-        <ConnectButton accountStatus="address" chainStatus="icon" showBalance={false} />
+        <div className="flex items-center gap-3">
+          <RefreshPrice />
+          <ConnectButton accountStatus="address" chainStatus="icon" showBalance={false} />
+        </div>
       </div>
     </header>
   );
