@@ -95,6 +95,11 @@ export function TradePanel({ onTraded }: { onTraded?: () => void }) {
       : ((shortPos as { size: bigint } | undefined)?.size ?? 0n) > 0n;
 
   // ---- handlers ----
+  // NOTE: increasePosition and closePosition go through PositionRouter,
+  // NOT MarginManager directly. MarginManager.increasePosition has an
+  // onlyRouter modifier — direct wallet calls revert. PositionRouter is
+  // whitelisted as an approved router in Deploy.s.sol Phase 5 via
+  // mm.setRouter(address(router), true).
   const handleApprove = useCallback(() => {
     writeContract({
       ...contracts.collateralToken,
@@ -106,7 +111,7 @@ export function TradePanel({ onTraded }: { onTraded?: () => void }) {
   const handleOpen = useCallback(() => {
     if (!address || size === 0n || collateral === 0n) return;
     writeContract({
-      ...contracts.marginManager,
+      ...contracts.positionRouter,
       functionName: "increasePosition",
       args: [ETH_USD_MARKET, side, size, collateral],
     });
@@ -115,7 +120,7 @@ export function TradePanel({ onTraded }: { onTraded?: () => void }) {
   const handleClose = useCallback(() => {
     if (!address) return;
     writeContract({
-      ...contracts.marginManager,
+      ...contracts.positionRouter,
       functionName: "closePosition",
       args: [ETH_USD_MARKET, side],
     });
