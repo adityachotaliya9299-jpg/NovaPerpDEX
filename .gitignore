@@ -1,20 +1,20 @@
-# Foundry
-out/
-cache/
-broadcast/
+# Foundry — root-level only (leading slash prevents matching frontend/lib/)
+/out/
+/cache/
+/broadcast/
+/lib/
 
-# Dependencies
-lib/
+# node_modules — all locations
 node_modules/
 
 # Env & secrets
 .env
 .env.*
 !.env.example
+!.env.local.example
 
-# Frontend
+# Frontend build artifacts
 frontend/.next/
-frontend/node_modules/
 frontend/out/
 
 # Editor / OS
