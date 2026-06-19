@@ -225,9 +225,20 @@ function OrderList({ refreshKey }: { refreshKey: number }) {
       for (const f of fetches) {
         if (f.status !== "fulfilled") continue;
         const { orderId, rawOrder, isExec } = f.value;
-        const o = rawOrder as unknown as RawOrder;
-        if (!o.active) continue;
-        result.push({ orderId, order: o, isExecutable: isExec });
+         const t = rawOrder as unknown as readonly unknown[];
+        const active = Boolean(t[7]);
+        if (!active) continue;
+        const order: RawOrder = {
+          account: t[0] as `0x${string}`,
+          market: t[1] as `0x${string}`,
+          side: Number(t[2]),
+          sizeDelta: t[3] as bigint,
+          collateralDelta: t[4] as bigint,
+          triggerPrice: t[5] as bigint,
+          triggerAbove: Boolean(t[6]),
+          active: true,
+        };
+        result.push({ orderId, order, isExecutable: isExec });
       }
       setRows(result.reverse());
     } catch (e) {
