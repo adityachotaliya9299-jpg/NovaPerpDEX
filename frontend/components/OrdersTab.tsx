@@ -48,14 +48,19 @@ function PlaceOrderForm({ onPlaced }: { onPlaced?: () => void }) {
   const collateral = parseWad(collateralInput);
   const trigger = parseWad(triggerInput);
 
-  if (writeData && writeData !== txHash) setTxHash(writeData);
-  if (isSuccess && txHash) {
-    setTxHash(undefined);
-    setSizeInput("");
-    setCollateralInput("");
-    setTriggerInput("");
-    onPlaced?.();
-  }
+  useEffect(() => {
+    if (writeData) setTxHash(writeData);
+  }, [writeData]);
+
+  useEffect(() => {
+    if (isSuccess) {
+      setTxHash(undefined);
+      setSizeInput("");
+      setCollateralInput("");
+      setTriggerInput("");
+      onPlaced?.();
+    }
+  }, [isSuccess, onPlaced]);
 
   function handlePlace() {
     if (!address || size === 0n || collateral === 0n || trigger === 0n) return;
@@ -213,11 +218,16 @@ function OrderRow({
   const { writeContract, data: writeData, isPending } = useWriteContract();
   const { isLoading: isConfirming, isSuccess } = useWaitForTransactionReceipt({ hash: txHash });
 
-  if (writeData && writeData !== txHash) setTxHash(writeData);
-  if (isSuccess && txHash) {
-    setTxHash(undefined);
-    onChanged?.();
-  }
+  useEffect(() => {
+    if (writeData) setTxHash(writeData);
+  }, [writeData]);
+
+  useEffect(() => {
+    if (isSuccess) {
+      setTxHash(undefined);
+      onChanged?.();
+    }
+  }, [isSuccess, onChanged]);
 
   const isLoading = isPending || isConfirming;
   const isLong = order.side === SIDE.LONG;
