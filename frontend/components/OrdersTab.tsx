@@ -218,7 +218,7 @@ function OrderList({ refreshKey }: { refreshKey: number }) {
       for (const f of fetches) {
         if (f.status !== "fulfilled") continue;
         const { orderId, rawOrder, isExec } = f.value;
-        const o = rawOrder as RawOrder;
+        const o = rawOrder as unknown as RawOrder;
         if (!o.active) continue;
         result.push({ orderId, order: o, isExecutable: isExec });
       }
