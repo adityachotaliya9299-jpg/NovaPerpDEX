@@ -1,13 +1,7 @@
 "use client";
 
-import { useState, useMemo, useEffect } from "react";
-import {
-  useAccount,
-  useReadContract,
-  useReadContracts,
-  useWriteContract,
-  useWaitForTransactionReceipt,
-} from "wagmi";
+import { useState, useEffect } from "react";
+import { useAccount, usePublicClient, useWriteContract, useWaitForTransactionReceipt } from "wagmi";
 import { contracts, ETH_USD_MARKET } from "@/lib/contracts";
 import { parseWad, formatAmount, formatPrice, SIDE, type Side } from "@/lib/utils/format";
 
@@ -23,12 +17,11 @@ interface RawOrder {
 }
 
 /**
- * OrderBook has no per-account enumeration (no `ordersByAccount`-style
- * getter) — only `orders(uint256 id)` for a single order and `nextOrderId()`
- * for the upper bound. To list "my orders" the only option is to read every
- * order id from 0 to nextOrderId-1 and filter client-side. That's fine at
- * testnet scale (dozens of orders) but would not scale to a busy mainnet
- * order book without an indexer — flagged here rather than hidden.
+ * OrderBook has no per-account enumeration — only orders(uint256 id) and
+ * nextOrderId(). We scan all order IDs client-side. Fine at testnet scale.
+ * Note: we use usePublicClient + readContract imperatively rather than
+ * useReadContracts with a dynamic array, to avoid wagmi's React Query
+ * cache issues with changing-length contract arrays.
  */
 const MAX_ORDERS_TO_SCAN = 200;
 
@@ -44,23 +37,19 @@ function PlaceOrderForm({ onPlaced }: { onPlaced?: () => void }) {
   const { writeContract, data: writeData, isPending } = useWriteContract();
   const { isLoading: isConfirming, isSuccess } = useWaitForTransactionReceipt({ hash: txHash });
 
-  useEffect(() => {
-    if (writeData) setTxHash(writeData);
-  }, [writeData]);
+  const size = parseWad(sizeInput);
+  const collateral = parseWad(collateralInput);
+  const trigger = parseWad(triggerInput);
+
+  useEffect(() => { if (writeData) setTxHash(writeData); }, [writeData]);
 
   useEffect(() => {
     if (isSuccess) {
       setTxHash(undefined);
-      setSizeInput("");
-      setCollateralInput("");
-      setTriggerInput("");
+      setSizeInput(""); setCollateralInput(""); setTriggerInput("");
       onPlaced?.();
     }
   }, [isSuccess, onPlaced]);
-
-  const size = parseWad(sizeInput);
-  const collateral = parseWad(collateralInput);
-  const trigger = parseWad(triggerInput);
 
   function handlePlace() {
     if (!address || size === 0n || collateral === 0n || trigger === 0n) return;
@@ -74,181 +63,86 @@ function PlaceOrderForm({ onPlaced }: { onPlaced?: () => void }) {
   const isLoading = isPending || isConfirming;
 
   return (
-    <div
-      className="border p-4 space-y-4"
-      style={{ borderColor: "var(--border)", background: "var(--bg-surface)" }}
-    >
+    <div className="border p-4 space-y-4" style={{ borderColor: "var(--border)", background: "var(--bg-surface)" }}>
       <h3 className="text-xs font-medium uppercase tracking-wider" style={{ color: "var(--text-muted)" }}>
         Place Limit Order
       </h3>
 
       <div className="flex gap-2">
-        <button
-          onClick={() => setSide(SIDE.LONG)}
-          className="flex-1 py-2 text-sm font-semibold transition-opacity"
-          style={
-            side === SIDE.LONG
-              ? { background: "var(--accent-long)", color: "var(--bg-base)" }
-              : { background: "var(--bg-elevated)", color: "var(--text-primary)", border: "1px solid var(--border)", opacity: 0.55 }
-          }
-        >
-          Long
-        </button>
-        <button
-          onClick={() => setSide(SIDE.SHORT)}
-          className="flex-1 py-2 text-sm font-semibold transition-opacity"
-          style={
-            side === SIDE.SHORT
-              ? { background: "var(--accent-short)", color: "#fff" }
-              : { background: "var(--bg-elevated)", color: "var(--text-primary)", border: "1px solid var(--border)", opacity: 0.55 }
-          }
-        >
-          Short
-        </button>
+        {([SIDE.LONG, SIDE.SHORT] as const).map((s) => (
+          <button key={s} onClick={() => setSide(s)} className="flex-1 py-2 text-sm font-semibold transition-opacity"
+            style={side === s
+              ? { background: s === SIDE.LONG ? "var(--accent-long)" : "var(--accent-short)", color: s === SIDE.LONG ? "var(--bg-base)" : "#fff" }
+              : { background: "var(--bg-elevated)", color: "var(--text-primary)", border: "1px solid var(--border)", opacity: 0.55 }}>
+            {s === SIDE.LONG ? "Long" : "Short"}
+          </button>
+        ))}
       </div>
 
-      <div>
-        <label className="text-xs mb-1.5 block" style={{ color: "var(--text-muted)" }}>
-          Position size (nUSD)
-        </label>
-        <input
-          type="number"
-          min="0"
-          placeholder="0.00"
-          value={sizeInput}
-          onChange={(e) => setSizeInput(e.target.value)}
-          className="w-full bg-transparent border px-3 py-2.5 text-sm font-mono tabular-nums outline-none"
-          style={{ borderColor: "var(--border)", background: "var(--bg-elevated)", color: "var(--text-primary)" }}
-        />
-      </div>
-
-      <div>
-        <label className="text-xs mb-1.5 block" style={{ color: "var(--text-muted)" }}>
-          Collateral (nUSD)
-        </label>
-        <input
-          type="number"
-          min="0"
-          placeholder="0.00"
-          value={collateralInput}
-          onChange={(e) => setCollateralInput(e.target.value)}
-          className="w-full bg-transparent border px-3 py-2.5 text-sm font-mono tabular-nums outline-none"
-          style={{ borderColor: "var(--border)", background: "var(--bg-elevated)", color: "var(--text-primary)" }}
-        />
-      </div>
-
-      <div>
-        <label className="text-xs mb-1.5 block" style={{ color: "var(--text-muted)" }}>
-          Trigger price (USD)
-        </label>
-        <input
-          type="number"
-          min="0"
-          placeholder="0.00"
-          value={triggerInput}
-          onChange={(e) => setTriggerInput(e.target.value)}
-          className="w-full bg-transparent border px-3 py-2.5 text-sm font-mono tabular-nums outline-none"
-          style={{ borderColor: "var(--border)", background: "var(--bg-elevated)", color: "var(--text-primary)" }}
-        />
-      </div>
+      {[
+        { label: "Position size (nUSD)", value: sizeInput, set: setSizeInput },
+        { label: "Collateral (nUSD)", value: collateralInput, set: setCollateralInput },
+        { label: "Trigger price (USD)", value: triggerInput, set: setTriggerInput },
+      ].map(({ label, value, set }) => (
+        <div key={label}>
+          <label className="text-xs mb-1.5 block" style={{ color: "var(--text-muted)" }}>{label}</label>
+          <input type="number" min="0" placeholder="0.00" value={value}
+            onChange={(e) => set(e.target.value)}
+            className="w-full bg-transparent border px-3 py-2.5 text-sm font-mono tabular-nums outline-none"
+            style={{ borderColor: "var(--border)", background: "var(--bg-elevated)", color: "var(--text-primary)" }} />
+        </div>
+      ))}
 
       <div className="flex gap-2">
-        <button
-          onClick={() => setTriggerAbove(false)}
-          className="flex-1 py-2 text-xs font-medium transition-opacity"
-          style={
-            !triggerAbove
+        {[false, true].map((above) => (
+          <button key={String(above)} onClick={() => setTriggerAbove(above)}
+            className="flex-1 py-2 text-xs font-medium transition-opacity"
+            style={triggerAbove === above
               ? { background: "var(--accent-info)", color: "var(--bg-base)" }
-              : { background: "var(--bg-elevated)", color: "var(--text-muted)", border: "1px solid var(--border)" }
-          }
-        >
-          Execute at or below
-        </button>
-        <button
-          onClick={() => setTriggerAbove(true)}
-          className="flex-1 py-2 text-xs font-medium transition-opacity"
-          style={
-            triggerAbove
-              ? { background: "var(--accent-info)", color: "var(--bg-base)" }
-              : { background: "var(--bg-elevated)", color: "var(--text-muted)", border: "1px solid var(--border)" }
-          }
-        >
-          Execute at or above
-        </button>
+              : { background: "var(--bg-elevated)", color: "var(--text-muted)", border: "1px solid var(--border)" }}>
+            {above ? "Execute at or above" : "Execute at or below"}
+          </button>
+        ))}
       </div>
 
       {!address ? (
-        <p className="text-xs text-center py-2" style={{ color: "var(--text-muted)" }}>
-          Connect wallet to place orders
-        </p>
+        <p className="text-xs text-center py-2" style={{ color: "var(--text-muted)" }}>Connect wallet to place orders</p>
       ) : (
-        <button
-          onClick={handlePlace}
-          disabled={isLoading || size === 0n || collateral === 0n || trigger === 0n}
+        <button onClick={handlePlace} disabled={isLoading || size === 0n || collateral === 0n || trigger === 0n}
           className="w-full py-3 text-sm font-semibold transition-opacity disabled:opacity-40"
-          style={{ background: "var(--accent-info)", color: "var(--bg-base)" }}
-        >
+          style={{ background: "var(--accent-info)", color: "var(--bg-base)" }}>
           {isLoading ? (isConfirming ? "Confirming…" : "Sending…") : "Place Order"}
         </button>
       )}
 
       <p className="text-[11px]" style={{ color: "var(--text-muted)" }}>
-        Note: placing an order does not lock collateral up front. The order
-        only pulls collateral from your wallet when it executes — make sure
-        you have nUSD approved and available at execution time.
+        Note: placing an order does not lock collateral up front. The order only pulls
+        collateral from your wallet when it executes — make sure you have nUSD approved
+        and available at execution time.
       </p>
     </div>
   );
 }
 
-function OrderRow({
-  orderId,
-  order,
-  isExecutable,
-  isOwnOrder,
-  onChanged,
-}: {
-  orderId: number;
-  order: RawOrder;
-  isExecutable: boolean;
-  isOwnOrder: boolean;
-  onChanged?: () => void;
+function OrderRow({ orderId, order, isExecutable, isOwnOrder, onChanged }: {
+  orderId: number; order: RawOrder; isExecutable: boolean;
+  isOwnOrder: boolean; onChanged?: () => void;
 }) {
   const [txHash, setTxHash] = useState<`0x${string}` | undefined>();
   const { writeContract, data: writeData, isPending } = useWriteContract();
   const { isLoading: isConfirming, isSuccess } = useWaitForTransactionReceipt({ hash: txHash });
 
-  useEffect(() => {
-    if (writeData) setTxHash(writeData);
-  }, [writeData]);
-
-  useEffect(() => {
-    if (isSuccess) {
-      setTxHash(undefined);
-      onChanged?.();
-    }
-  }, [isSuccess, onChanged]);
+  useEffect(() => { if (writeData) setTxHash(writeData); }, [writeData]);
+  useEffect(() => { if (isSuccess) { setTxHash(undefined); onChanged?.(); } }, [isSuccess, onChanged]);
 
   const isLoading = isPending || isConfirming;
   const isLong = order.side === SIDE.LONG;
 
-  function handleCancel() {
-    writeContract({ ...contracts.orderBook, functionName: "cancelOrder", args: [BigInt(orderId)] });
-  }
-  function handleExecute() {
-    writeContract({ ...contracts.orderBook, functionName: "executeOrder", args: [BigInt(orderId)] });
-  }
-
   return (
     <div className="p-3 border-b last:border-b-0 flex items-center justify-between gap-3" style={{ borderColor: "var(--border)" }}>
       <div className="flex items-center gap-3 text-xs">
-        <span
-          className="font-semibold px-1.5 py-0.5"
-          style={{
-            background: isLong ? "var(--accent-long)22" : "var(--accent-short)22",
-            color: isLong ? "var(--accent-long)" : "var(--accent-short)",
-          }}
-        >
+        <span className="font-semibold px-1.5 py-0.5"
+          style={{ background: isLong ? "var(--accent-long)22" : "var(--accent-short)22", color: isLong ? "var(--accent-long)" : "var(--accent-short)" }}>
           {isLong ? "LONG" : "SHORT"}
         </span>
         <span className="font-mono tabular-nums" style={{ color: "var(--text-primary)" }}>
@@ -258,9 +152,7 @@ function OrderRow({
           {order.triggerAbove ? "≥" : "≤"} {formatPrice(order.triggerPrice)}
         </span>
         {isExecutable && (
-          <span className="text-[10px] font-medium" style={{ color: "var(--accent-warn)" }}>
-            READY
-          </span>
+          <span className="text-[10px] font-medium" style={{ color: "var(--accent-warn)" }}>READY</span>
         )}
         {!isOwnOrder && (
           <span className="text-[10px]" style={{ color: "var(--text-muted)" }}>
@@ -270,22 +162,16 @@ function OrderRow({
       </div>
       <div className="flex items-center gap-2">
         {isExecutable && (
-          <button
-            onClick={handleExecute}
-            disabled={isLoading}
-            className="text-[11px] font-semibold px-2 py-1 transition-opacity disabled:opacity-50"
-            style={{ background: "var(--accent-warn)", color: "var(--bg-base)" }}
-          >
+          <button onClick={() => writeContract({ ...contracts.orderBook, functionName: "executeOrder", args: [BigInt(orderId)] })}
+            disabled={isLoading} className="text-[11px] font-semibold px-2 py-1 transition-opacity disabled:opacity-50"
+            style={{ background: "var(--accent-warn)", color: "var(--bg-base)" }}>
             Execute
           </button>
         )}
         {isOwnOrder && (
-          <button
-            onClick={handleCancel}
-            disabled={isLoading}
-            className="text-[11px] px-2 py-1 transition-opacity disabled:opacity-50"
-            style={{ color: "var(--text-muted)", border: "1px solid var(--border)" }}
-          >
+          <button onClick={() => writeContract({ ...contracts.orderBook, functionName: "cancelOrder", args: [BigInt(orderId)] })}
+            disabled={isLoading} className="text-[11px] px-2 py-1 transition-opacity disabled:opacity-50"
+            style={{ color: "var(--text-muted)", border: "1px solid var(--border)" }}>
             Cancel
           </button>
         )}
@@ -296,97 +182,74 @@ function OrderRow({
 
 function OrderList({ refreshKey }: { refreshKey: number }) {
   const { address } = useAccount();
+  const client = usePublicClient();
+  const [nextId, setNextId] = useState<number | null>(null);
+  const [rows, setRows] = useState<{ orderId: number; order: RawOrder; isExecutable: boolean }[]>([]);
+  const [loading, setLoading] = useState(false);
 
-  const { data: nextIdData, refetch: refetchNextId } = useReadContract({
-    ...contracts.orderBook,
-    functionName: "nextOrderId",
-    query: { refetchInterval: 5_000 },
-  });
-
-  useEffect(() => {
-    refetchNextId();
-    const timer = setTimeout(() => refetchNextId(), 15_000);
-    return () => clearTimeout(timer);
-  }, [refreshKey, refetchNextId]);
-
-  const nextId = Number(nextIdData ?? 0n);
-  const scanCount = Math.min(nextId, MAX_ORDERS_TO_SCAN);
-  const startId = nextId - scanCount;
-
-  const orderContracts = useMemo(
-    () =>
-      Array.from({ length: scanCount }, (_, i) => ({
+  async function load() {
+    if (!client) return;
+    setLoading(true);
+    try {
+      const nid = await client.readContract({
         ...contracts.orderBook,
-        functionName: "orders" as const,
-        args: [BigInt(startId + i)] as const,
-      })),
-    [scanCount, startId]
-  );
+        functionName: "nextOrderId",
+        args: [],
+      }) as bigint;
+      const n = Number(nid);
+      setNextId(n);
+      if (n === 0) { setRows([]); return; }
 
-  const { data: ordersData, refetch: refetchOrders } = useReadContracts({
-    contracts: orderContracts,
-    query: { enabled: scanCount > 0, refetchInterval: 5_000 },
-  });
+      const scanCount = Math.min(n, MAX_ORDERS_TO_SCAN);
+      const startId = n - scanCount;
 
-  useEffect(() => {
-    if (scanCount > 0) refetchOrders();
-  }, [scanCount, refetchOrders]);
+      const fetches = await Promise.allSettled(
+        Array.from({ length: scanCount }, async (_, i) => {
+          const orderId = startId + i;
+          const [rawOrder, isExec] = await Promise.all([
+            client.readContract({ ...contracts.orderBook, functionName: "orders", args: [BigInt(orderId)] }),
+            client.readContract({ ...contracts.orderBook, functionName: "isExecutable", args: [BigInt(orderId)] }).catch(() => false),
+          ]);
+          return { orderId, rawOrder, isExec: isExec as boolean };
+        })
+      );
 
-  const executableContracts = useMemo(
-    () =>
-      Array.from({ length: scanCount }, (_, i) => ({
-        ...contracts.orderBook,
-        functionName: "isExecutable" as const,
-        args: [BigInt(startId + i)] as const,
-      })),
-    [scanCount, startId]
-  );
-
-  const { data: executableData } = useReadContracts({
-    contracts: executableContracts,
-    query: { enabled: scanCount > 0, refetchInterval: 15_000 },
-  });
-
-  const rows = (ordersData ?? [])
-    .map((res, i) => {
-      const raw = res?.result;
-      if (!raw) return null;
-
-      // wagmi v2 returns named struct fields as object when ABI outputs are named,
-      // or a positional array when unnamed. Handle both defensively:
-      let order: RawOrder;
-      if (Array.isArray(raw)) {
-        const arr = raw as readonly unknown[];
-        order = {
-          account: arr[0] as `0x${string}`,
-          market: arr[1] as `0x${string}`,
-          side: Number(arr[2]),
-          sizeDelta: arr[3] as bigint,
-          collateralDelta: arr[4] as bigint,
-          triggerPrice: arr[5] as bigint,
-          triggerAbove: Boolean(arr[6]),
-          active: Boolean(arr[7]),
-        };
-      } else {
-        order = raw as RawOrder;
+      const result: typeof rows = [];
+      for (const f of fetches) {
+        if (f.status !== "fulfilled") continue;
+        const { orderId, rawOrder, isExec } = f.value;
+        const o = rawOrder as RawOrder;
+        if (!o.active) continue;
+        result.push({ orderId, order: o, isExecutable: isExec });
       }
+      setRows(result.reverse());
+    } catch (e) {
+      console.error("OrderList load error", e);
+    } finally {
+      setLoading(false);
+    }
+  }
 
-      if (!order.active) return null;
-      const isExecutable = (executableData?.[i]?.result as boolean | undefined) ?? false;
-      return { orderId: startId + i, order, isExecutable };
-    })
-    .filter((r): r is { orderId: number; order: RawOrder; isExecutable: boolean } => r !== null)
-    .reverse();
+  useEffect(() => {
+    load();
+    const interval = setInterval(load, 15_000);
+    return () => clearInterval(interval);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [refreshKey, client]);
+
+  if (nextId === null) {
+    return (
+      <div className="border p-8 text-center" style={{ borderColor: "var(--border)", background: "var(--bg-surface)" }}>
+        <p className="text-xs" style={{ color: "var(--text-muted)" }}>Loading orders…</p>
+      </div>
+    );
+  }
 
   if (nextId === 0) {
     return (
       <div className="border p-8 text-center" style={{ borderColor: "var(--border)", background: "var(--bg-surface)" }}>
-        <p className="text-sm font-medium mb-1" style={{ color: "var(--text-primary)" }}>
-          No orders yet
-        </p>
-        <p className="text-xs" style={{ color: "var(--text-muted)" }}>
-          Place a limit order using the panel on the left.
-        </p>
+        <p className="text-sm font-medium mb-1" style={{ color: "var(--text-primary)" }}>No orders yet</p>
+        <p className="text-xs" style={{ color: "var(--text-muted)" }}>Place a limit order using the panel on the left.</p>
       </div>
     );
   }
@@ -395,7 +258,7 @@ function OrderList({ refreshKey }: { refreshKey: number }) {
     <div className="border overflow-hidden" style={{ borderColor: "var(--border)", background: "var(--bg-surface)" }}>
       <div className="px-4 py-2.5 border-b flex items-center justify-between" style={{ borderColor: "var(--border)" }}>
         <span className="text-xs font-medium uppercase tracking-wider" style={{ color: "var(--text-muted)" }}>
-          Open Orders
+          Open Orders {loading && <span>…</span>}
         </span>
         {nextId > MAX_ORDERS_TO_SCAN && (
           <span className="text-[10px]" style={{ color: "var(--accent-warn)" }}>
@@ -404,18 +267,12 @@ function OrderList({ refreshKey }: { refreshKey: number }) {
         )}
       </div>
       {rows.length === 0 ? (
-        <p className="text-xs text-center py-6" style={{ color: "var(--text-muted)" }}>
-          No active orders right now.
-        </p>
+        <p className="text-xs text-center py-6" style={{ color: "var(--text-muted)" }}>No active orders right now.</p>
       ) : (
         rows.map(({ orderId, order, isExecutable }) => (
-          <OrderRow
-            key={orderId}
-            orderId={orderId}
-            order={order}
-            isExecutable={isExecutable}
+          <OrderRow key={orderId} orderId={orderId} order={order} isExecutable={isExecutable}
             isOwnOrder={!!address && order.account.toLowerCase() === address.toLowerCase()}
-          />
+            onChanged={load} />
         ))
       )}
     </div>
