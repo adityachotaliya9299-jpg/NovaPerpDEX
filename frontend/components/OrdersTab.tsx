@@ -22,6 +22,14 @@ interface RawOrder {
   active: boolean;
 }
 
+/**
+ * OrderBook has no per-account enumeration (no `ordersByAccount`-style
+ * getter) — only `orders(uint256 id)` for a single order and `nextOrderId()`
+ * for the upper bound. To list "my orders" the only option is to read every
+ * order id from 0 to nextOrderId-1 and filter client-side. That's fine at
+ * testnet scale (dozens of orders) but would not scale to a busy mainnet
+ * order book without an indexer — flagged here rather than hidden.
+ */
 const MAX_ORDERS_TO_SCAN = 200;
 
 function PlaceOrderForm({ onPlaced }: { onPlaced?: () => void }) {
@@ -36,10 +44,6 @@ function PlaceOrderForm({ onPlaced }: { onPlaced?: () => void }) {
   const { writeContract, data: writeData, isPending } = useWriteContract();
   const { isLoading: isConfirming, isSuccess } = useWaitForTransactionReceipt({ hash: txHash });
 
-  const size = parseWad(sizeInput);
-  const collateral = parseWad(collateralInput);
-  const trigger = parseWad(triggerInput);
-
   useEffect(() => {
     if (writeData) setTxHash(writeData);
   }, [writeData]);
@@ -53,6 +57,10 @@ function PlaceOrderForm({ onPlaced }: { onPlaced?: () => void }) {
       onPlaced?.();
     }
   }, [isSuccess, onPlaced]);
+
+  const size = parseWad(sizeInput);
+  const collateral = parseWad(collateralInput);
+  const trigger = parseWad(triggerInput);
 
   function handlePlace() {
     if (!address || size === 0n || collateral === 0n || trigger === 0n) return;
@@ -316,9 +324,13 @@ function OrderList({ refreshKey }: { refreshKey: number }) {
   );
 
   const { data: ordersData, refetch: refetchOrders } = useReadContracts({
-    contracts: orderContracts.length > 0 ? orderContracts : [{ ...contracts.orderBook, functionName: "nextOrderId" as const, args: [] as const }],
-    query: { refetchInterval: 5_000 },
+    contracts: orderContracts,
+    query: { enabled: scanCount > 0, refetchInterval: 5_000 },
   });
+
+  useEffect(() => {
+    if (scanCount > 0) refetchOrders();
+  }, [scanCount, refetchOrders]);
 
   const executableContracts = useMemo(
     () =>
@@ -331,19 +343,35 @@ function OrderList({ refreshKey }: { refreshKey: number }) {
   );
 
   const { data: executableData } = useReadContracts({
-    contracts: executableContracts.length > 0 ? executableContracts : [{ ...contracts.orderBook, functionName: "nextOrderId" as const, args: [] as const }],
-    query: { enabled: scanCount > 0, refetchInterval: 5_000 },
+    contracts: executableContracts,
+    query: { enabled: scanCount > 0, refetchInterval: 15_000 },
   });
 
-  useEffect(() => {
-    if (scanCount > 0) refetchOrders();
-  }, [scanCount, refetchOrders]);
-
-  const rows = scanCount === 0 ? [] : (ordersData ?? [])
-    .slice(0, scanCount)
+  const rows = (ordersData ?? [])
     .map((res, i) => {
-      const order = res?.result as RawOrder | undefined;
-      if (!order || !order.active) return null;
+      const raw = res?.result;
+      if (!raw) return null;
+
+      // wagmi v2 returns named struct fields as object when ABI outputs are named,
+      // or a positional array when unnamed. Handle both defensively:
+      let order: RawOrder;
+      if (Array.isArray(raw)) {
+        const arr = raw as readonly unknown[];
+        order = {
+          account: arr[0] as `0x${string}`,
+          market: arr[1] as `0x${string}`,
+          side: Number(arr[2]),
+          sizeDelta: arr[3] as bigint,
+          collateralDelta: arr[4] as bigint,
+          triggerPrice: arr[5] as bigint,
+          triggerAbove: Boolean(arr[6]),
+          active: Boolean(arr[7]),
+        };
+      } else {
+        order = raw as RawOrder;
+      }
+
+      if (!order.active) return null;
       const isExecutable = (executableData?.[i]?.result as boolean | undefined) ?? false;
       return { orderId: startId + i, order, isExecutable };
     })
