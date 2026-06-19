@@ -300,11 +300,11 @@ function OrderList({ refreshKey }: { refreshKey: number }) {
   const { data: nextIdData, refetch: refetchNextId } = useReadContract({
     ...contracts.orderBook,
     functionName: "nextOrderId",
-    query: { refetchInterval: 15_000 },
+    query: { refetchInterval: 5_000 },
   });
 
   useEffect(() => {
-    if (refreshKey) refetchNextId();
+    refetchNextId();
   }, [refreshKey, refetchNextId]);
 
   const nextId = Number(nextIdData ?? 0n);
@@ -323,7 +323,7 @@ function OrderList({ refreshKey }: { refreshKey: number }) {
 
   const { data: ordersData } = useReadContracts({
     contracts: orderContracts,
-    query: { enabled: scanCount > 0 },
+    query: { enabled: scanCount > 0, refetchInterval: 5_000 },
   });
 
   const executableContracts = useMemo(
