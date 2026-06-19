@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { useAccount, usePublicClient, useWriteContract, useWaitForTransactionReceipt } from "wagmi";
+import { sepolia } from "viem/chains";
 import { contracts, ETH_USD_MARKET } from "@/lib/contracts";
 import { parseWad, formatAmount, formatPrice, SIDE, type Side } from "@/lib/utils/format";
 
@@ -16,13 +17,6 @@ interface RawOrder {
   active: boolean;
 }
 
-/**
- * OrderBook has no per-account enumeration — only orders(uint256 id) and
- * nextOrderId(). We scan all order IDs client-side. Fine at testnet scale.
- * Note: we use usePublicClient + readContract imperatively rather than
- * useReadContracts with a dynamic array, to avoid wagmi's React Query
- * cache issues with changing-length contract arrays.
- */
 const MAX_ORDERS_TO_SCAN = 200;
 
 function PlaceOrderForm({ onPlaced }: { onPlaced?: () => void }) {
@@ -42,7 +36,6 @@ function PlaceOrderForm({ onPlaced }: { onPlaced?: () => void }) {
   const trigger = parseWad(triggerInput);
 
   useEffect(() => { if (writeData) setTxHash(writeData); }, [writeData]);
-
   useEffect(() => {
     if (isSuccess) {
       setTxHash(undefined);
@@ -182,14 +175,20 @@ function OrderRow({ orderId, order, isExecutable, isOwnOrder, onChanged }: {
 
 function OrderList({ refreshKey }: { refreshKey: number }) {
   const { address } = useAccount();
-  const client = usePublicClient();
+  // Explicitly target Sepolia so this works regardless of which chain MetaMask reports
+  const client = usePublicClient({ chainId: sepolia.id });
   const [nextId, setNextId] = useState<number | null>(null);
   const [rows, setRows] = useState<{ orderId: number; order: RawOrder; isExecutable: boolean }[]>([]);
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   async function load() {
-    if (!client) return;
+    if (!client) {
+      setError("No RPC client available");
+      return;
+    }
     setLoading(true);
+    setError(null);
     try {
       const nid = await client.readContract({
         ...contracts.orderBook,
@@ -207,8 +206,16 @@ function OrderList({ refreshKey }: { refreshKey: number }) {
         Array.from({ length: scanCount }, async (_, i) => {
           const orderId = startId + i;
           const [rawOrder, isExec] = await Promise.all([
-            client.readContract({ ...contracts.orderBook, functionName: "orders", args: [BigInt(orderId)] }),
-            client.readContract({ ...contracts.orderBook, functionName: "isExecutable", args: [BigInt(orderId)] }).catch(() => false),
+            client.readContract({
+              ...contracts.orderBook,
+              functionName: "orders",
+              args: [BigInt(orderId)],
+            }),
+            client.readContract({
+              ...contracts.orderBook,
+              functionName: "isExecutable",
+              args: [BigInt(orderId)],
+            }).catch(() => false),
           ]);
           return { orderId, rawOrder, isExec: isExec as boolean };
         })
@@ -224,6 +231,8 @@ function OrderList({ refreshKey }: { refreshKey: number }) {
       }
       setRows(result.reverse());
     } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      setError(msg);
       console.error("OrderList load error", e);
     } finally {
       setLoading(false);
@@ -231,6 +240,7 @@ function OrderList({ refreshKey }: { refreshKey: number }) {
   }
 
   useEffect(() => {
+    if (!client) return;
     load();
     const interval = setInterval(load, 15_000);
     return () => clearInterval(interval);
@@ -240,7 +250,13 @@ function OrderList({ refreshKey }: { refreshKey: number }) {
   if (nextId === null) {
     return (
       <div className="border p-8 text-center" style={{ borderColor: "var(--border)", background: "var(--bg-surface)" }}>
-        <p className="text-xs" style={{ color: "var(--text-muted)" }}>Loading orders…</p>
+        {error ? (
+          <p className="text-xs" style={{ color: "var(--accent-short)" }}>
+            Failed to load orders: {error}
+          </p>
+        ) : (
+          <p className="text-xs" style={{ color: "var(--text-muted)" }}>Loading orders…</p>
+        )}
       </div>
     );
   }
@@ -258,7 +274,7 @@ function OrderList({ refreshKey }: { refreshKey: number }) {
     <div className="border overflow-hidden" style={{ borderColor: "var(--border)", background: "var(--bg-surface)" }}>
       <div className="px-4 py-2.5 border-b flex items-center justify-between" style={{ borderColor: "var(--border)" }}>
         <span className="text-xs font-medium uppercase tracking-wider" style={{ color: "var(--text-muted)" }}>
-          Open Orders {loading && <span>…</span>}
+          Open Orders {loading && <span style={{ color: "var(--text-muted)" }}>…</span>}
         </span>
         {nextId > MAX_ORDERS_TO_SCAN && (
           <span className="text-[10px]" style={{ color: "var(--accent-warn)" }}>
@@ -266,8 +282,15 @@ function OrderList({ refreshKey }: { refreshKey: number }) {
           </span>
         )}
       </div>
-      {rows.length === 0 ? (
-        <p className="text-xs text-center py-6" style={{ color: "var(--text-muted)" }}>No active orders right now.</p>
+      {error && (
+        <p className="text-xs text-center py-3" style={{ color: "var(--accent-short)" }}>
+          {error}
+        </p>
+      )}
+      {rows.length === 0 && !error ? (
+        <p className="text-xs text-center py-6" style={{ color: "var(--text-muted)" }}>
+          No active orders right now.
+        </p>
       ) : (
         rows.map(({ orderId, order, isExecutable }) => (
           <OrderRow key={orderId} orderId={orderId} order={order} isExecutable={isExecutable}
