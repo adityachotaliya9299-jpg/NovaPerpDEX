@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useAccount, useReadContract, useWriteContract, useWaitForTransactionReceipt } from "wagmi";
 import { contracts, ETH_USD_MARKET } from "@/lib/contracts";
 import { parseWad, SIDE, type Side } from "@/lib/utils/format";
@@ -11,18 +11,13 @@ import { parseWad, SIDE, type Side } from "@/lib/utils/format";
  *   - cancelTrigger(market, side)
  *   - isExecutable(account, market, side) -> bool
  *   - triggers(bytes32 key) -> struct   (key is an internal hash we can't
- *     reliably reproduce client-side without the contract source, since we
- *     don't know if it's keccak256(abi.encode(...)) or encodePacked, or in
- *     what argument order)
+ *     reliably reproduce client-side without the contract source)
  *
  * There's no getTrigger(account, market, side) convenience getter. That
  * means this UI genuinely cannot show "your current stop-loss is set at
  * $X" — only whether a trigger is currently executable (price already
- * crossed it) via isExecutable. A trigger that exists but hasn't been
- * crossed yet looks identical, from this UI's perspective, to no trigger
- * at all. This is a real on-chain interface gap, not a frontend shortcut —
- * flagged here rather than faked with a misleading "no stop-loss set"
- * label that might actually just mean "not triggered yet."
+ * crossed it) via isExecutable. This is a real on-chain interface gap,
+ * not a frontend shortcut.
  */
 export function StopLossTab() {
   const { address } = useAccount();
@@ -54,12 +49,17 @@ export function StopLossTab() {
   const { writeContract, data: writeData, isPending } = useWriteContract();
   const { isLoading: isConfirming, isSuccess } = useWaitForTransactionReceipt({ hash: txHash });
 
-  if (writeData && writeData !== txHash) setTxHash(writeData);
-  if (isSuccess && txHash) {
-    setTxHash(undefined);
-    setTriggerInput("");
-    refetchExecutable();
-  }
+  useEffect(() => {
+    if (writeData) setTxHash(writeData);
+  }, [writeData]);
+
+  useEffect(() => {
+    if (isSuccess) {
+      setTxHash(undefined);
+      setTriggerInput("");
+      refetchExecutable();
+    }
+  }, [isSuccess, refetchExecutable]);
 
   const hasPosition =
     side === SIDE.LONG
@@ -79,7 +79,11 @@ export function StopLossTab() {
   }
 
   function handleCancel() {
-    writeContract({ ...contracts.stopLossManager, functionName: "cancelTrigger", args: [ETH_USD_MARKET, side] });
+    writeContract({
+      ...contracts.stopLossManager,
+      functionName: "cancelTrigger",
+      args: [ETH_USD_MARKET, side],
+    });
   }
 
   function handleExecute() {
@@ -230,10 +234,7 @@ export function StopLossTab() {
               The contract doesn&apos;t expose a way to read back a trigger&apos;s
               configured price once set — only whether the current price has
               already crossed it. &quot;Not triggered&quot; means either no trigger
-              is set, or one is set but hasn&apos;t been crossed yet; this UI
-              can&apos;t tell those two apart. Keep track of what you set
-              yourself, or check the contract directly on Etherscan if you
-              need to confirm.
+              is set, or one is set but hasn&apos;t been crossed yet.
             </p>
           </div>
         )}
