@@ -6,6 +6,7 @@ import { WagmiProvider } from "wagmi";
 import { RainbowKitProvider, darkTheme } from "@rainbow-me/rainbowkit";
 import "@rainbow-me/rainbowkit/styles.css";
 import { wagmiConfig } from "@/lib/wagmi";
+import { ToastProvider } from "@/components/Toast";
 
 const rainbowKitTheme = darkTheme({
   accentColor: "#3ddc97",
@@ -22,7 +23,9 @@ export function Providers({ children }: { children: ReactNode }) {
   return (
     <WagmiProvider config={wagmiConfig}>
       <QueryClientProvider client={queryClient}>
-        <RainbowKitProvider theme={rainbowKitTheme}>{children}</RainbowKitProvider>
+        <RainbowKitProvider theme={rainbowKitTheme}>
+          <ToastProvider>{children}</ToastProvider>
+        </RainbowKitProvider>
       </QueryClientProvider>
     </WagmiProvider>
   );
