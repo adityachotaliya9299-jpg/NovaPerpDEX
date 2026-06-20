@@ -1170,6 +1170,338 @@ export const PriceFeedAbi = [
   }
 ] as const;
 
+export const OracleAggregatorAbi = [
+  {
+    "type": "constructor",
+    "inputs": [
+      {
+        "name": "roleManager",
+        "type": "address",
+        "internalType": "address"
+      },
+      {
+        "name": "chainlink_",
+        "type": "address",
+        "internalType": "address"
+      },
+      {
+        "name": "twap_",
+        "type": "address",
+        "internalType": "address"
+      }
+    ],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "chainlink",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "address",
+        "internalType": "contract ChainlinkAdapter"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "configureMarket",
+    "inputs": [
+      {
+        "name": "market",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      },
+      {
+        "name": "config",
+        "type": "tuple",
+        "internalType": "struct OracleAggregator.Config",
+        "components": [
+          {
+            "name": "useChainlink",
+            "type": "bool",
+            "internalType": "bool"
+          },
+          {
+            "name": "useTwap",
+            "type": "bool",
+            "internalType": "bool"
+          },
+          {
+            "name": "twapWindow",
+            "type": "uint256",
+            "internalType": "uint256"
+          },
+          {
+            "name": "maxDeviationBps",
+            "type": "uint256",
+            "internalType": "uint256"
+          },
+          {
+            "name": "fallbackToTwap",
+            "type": "bool",
+            "internalType": "bool"
+          },
+          {
+            "name": "configured",
+            "type": "bool",
+            "internalType": "bool"
+          }
+        ]
+      }
+    ],
+    "outputs": [],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "getConfig",
+    "inputs": [
+      {
+        "name": "market",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "",
+        "type": "tuple",
+        "internalType": "struct OracleAggregator.Config",
+        "components": [
+          {
+            "name": "useChainlink",
+            "type": "bool",
+            "internalType": "bool"
+          },
+          {
+            "name": "useTwap",
+            "type": "bool",
+            "internalType": "bool"
+          },
+          {
+            "name": "twapWindow",
+            "type": "uint256",
+            "internalType": "uint256"
+          },
+          {
+            "name": "maxDeviationBps",
+            "type": "uint256",
+            "internalType": "uint256"
+          },
+          {
+            "name": "fallbackToTwap",
+            "type": "bool",
+            "internalType": "bool"
+          },
+          {
+            "name": "configured",
+            "type": "bool",
+            "internalType": "bool"
+          }
+        ]
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "getPrice",
+    "inputs": [
+      {
+        "name": "market",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "lastUpdated",
+    "inputs": [
+      {
+        "name": "market",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "roles",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "address",
+        "internalType": "contract RoleManager"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "twap",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "address",
+        "internalType": "contract TWAPOracle"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "event",
+    "name": "MarketConfigured",
+    "inputs": [
+      {
+        "name": "market",
+        "type": "bytes32",
+        "indexed": true,
+        "internalType": "bytes32"
+      },
+      {
+        "name": "config",
+        "type": "tuple",
+        "indexed": false,
+        "internalType": "struct OracleAggregator.Config",
+        "components": [
+          {
+            "name": "useChainlink",
+            "type": "bool",
+            "internalType": "bool"
+          },
+          {
+            "name": "useTwap",
+            "type": "bool",
+            "internalType": "bool"
+          },
+          {
+            "name": "twapWindow",
+            "type": "uint256",
+            "internalType": "uint256"
+          },
+          {
+            "name": "maxDeviationBps",
+            "type": "uint256",
+            "internalType": "uint256"
+          },
+          {
+            "name": "fallbackToTwap",
+            "type": "bool",
+            "internalType": "bool"
+          },
+          {
+            "name": "configured",
+            "type": "bool",
+            "internalType": "bool"
+          }
+        ]
+      }
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "event",
+    "name": "PriceUpdated",
+    "inputs": [
+      {
+        "name": "market",
+        "type": "bytes32",
+        "indexed": true,
+        "internalType": "bytes32"
+      },
+      {
+        "name": "price",
+        "type": "uint256",
+        "indexed": false,
+        "internalType": "uint256"
+      },
+      {
+        "name": "timestamp",
+        "type": "uint256",
+        "indexed": false,
+        "internalType": "uint256"
+      }
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "error",
+    "name": "MarketNotConfigured",
+    "inputs": [
+      {
+        "name": "market",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      }
+    ]
+  },
+  {
+    "type": "error",
+    "name": "NoValidPrice",
+    "inputs": [
+      {
+        "name": "market",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      }
+    ]
+  },
+  {
+    "type": "error",
+    "name": "NotGovernor",
+    "inputs": [
+      {
+        "name": "caller",
+        "type": "address",
+        "internalType": "address"
+      }
+    ]
+  },
+  {
+    "type": "error",
+    "name": "PriceDeviation",
+    "inputs": [
+      {
+        "name": "market",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      },
+      {
+        "name": "chainlinkPrice",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "twapPrice",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ]
+  }
+] as const;
+
 export const VaultAbi = [
   {
     "type": "constructor",
