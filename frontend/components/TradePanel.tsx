@@ -364,7 +364,7 @@ export function TradePanel({ onTraded }: { onTraded?: () => void }) {
                 className="text-xs flex justify-between px-1"
                 style={{ color: "var(--text-muted)" }}
               >
-                <span>Vault free balance</span>
+                <span>Trading collateral ready (separate from LP)</span>
                 <span
                   className="font-mono tabular-nums"
                   style={{ color: "var(--accent-info)" }}
