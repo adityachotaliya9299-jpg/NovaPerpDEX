@@ -4,6 +4,7 @@ import { useState, useEffect } from "react";
 import { useAccount, useReadContract, useReadContracts, useWriteContract, useWaitForTransactionReceipt } from "wagmi";
 import { contracts } from "@/lib/contracts";
 import { formatAmount, parseWad, wadToNumber } from "@/lib/utils/format";
+import { useToast, decodeRevertReason } from "@/components/Toast";
 
 const MAX_UINT256 = BigInt("0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff");
 
@@ -47,8 +48,10 @@ export function LPVaultPanel({ onChanged }: { onChanged?: () => void }) {
     query: { enabled: amount > 0n },
   });
 
-  const { writeContract, data: writeData, isPending } = useWriteContract();
-  const { isLoading: isConfirming, isSuccess } = useWaitForTransactionReceipt({ hash: txHash });
+  const { show } = useToast();
+  const { writeContract, data: writeData, isPending, error: writeError } = useWriteContract();
+  const { isLoading: isConfirming, isSuccess, isError: isReceiptError, error: receiptError } =
+    useWaitForTransactionReceipt({ hash: txHash });
 
   useEffect(() => {
     if (writeData) setTxHash(writeData);
@@ -57,11 +60,26 @@ export function LPVaultPanel({ onChanged }: { onChanged?: () => void }) {
   useEffect(() => {
     if (isSuccess) {
       setTxHash(undefined);
+      show(
+        "success",
+        mode === "deposit" ? "Deposited" : "Withdrawn",
+        mode === "deposit"
+          ? `$${formatAmount(amount)} added to the LP vault.`
+          : `${formatAmount(amount, 6)} shares redeemed.`
+      );
       setAmountInput("");
       refetchReads();
       onChanged?.();
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isSuccess, refetchReads, onChanged]);
+
+  useEffect(() => {
+    if (writeError) show("error", "Action failed", decodeRevertReason(writeError));
+  }, [writeError, show]);
+  useEffect(() => {
+    if (isReceiptError) show("error", "Action reverted", decodeRevertReason(receiptError));
+  }, [isReceiptError, receiptError, show]);
 
   const needsApproval = mode === "deposit" && (!allowance || allowance < amount);
   const isLoading = isPending || isConfirming;
