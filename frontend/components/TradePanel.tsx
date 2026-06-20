@@ -9,7 +9,8 @@ import {
   useWaitForTransactionReceipt,
 } from "wagmi";
 import { contracts, ETH_USD_MARKET } from "@/lib/contracts";
-import { parseWad, formatAmount, SIDE, type Side } from "@/lib/utils/format";
+import { parseWad, formatAmount, estimateLiqPrice, SIDE, type Side } from "@/lib/utils/format";
+import { useToast, decodeRevertReason } from "@/components/Toast";
 
 type Tab = "open" | "close";
 
@@ -31,42 +32,31 @@ type Tab = "open" | "close";
  *   1. PositionRouter.closePosition()    — position closes, collateral+PnL → Vault free
  *   2. Vault.withdraw(amount)            — Vault free balance → nUSD wallet
  *
- * This is why "Approve nUSD → CollateralVault" was wrong and caused
- * Vault.InsufficientFree revert: CollateralVault never receives ERC20 directly;
- * it only moves balances already inside Vault.
- *
- * IMPORTANT: depositing exactly `collateral` is also wrong and causes a
- * second, subtler Vault.InsufficientFree revert — MarginManager charges a
- * position fee (POSITION_FEE_BPS in Deploy.s.sol, 0.1% of size) out of the
- * LOCKED amount when opening, so Vault needs collateral + fee sitting free,
- * not just collateral. See depositAmount below.
+ 
  */
 
 const MAX_UINT256 = BigInt(
   "0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
 );
+const MAINTENANCE_BPS = 200; // matches LeverageController market config
+const MAX_LEVERAGE = 50;
 
 type Step = "approve" | "deposit" | "open" | "close" | "withdraw";
 
 export function TradePanel({ onTraded }: { onTraded?: () => void }) {
   const { address } = useAccount();
+  const { show } = useToast();
   const [tab, setTab] = useState<Tab>("open");
   const [side, setSide] = useState<Side>(SIDE.LONG);
-  const [sizeInput, setSizeInput] = useState("");
   const [collateralInput, setCollateralInput] = useState("");
+  const [leverage, setLeverage] = useState(1);
   const [pendingStep, setPendingStep] = useState<Step | null>(null);
   const [txHash, setTxHash] = useState<`0x${string}` | undefined>();
 
-  const size = parseWad(sizeInput);
   const collateral = parseWad(collateralInput);
+  // Derived, not typed directly — see Phase 9.5 note above.
+  const size = (collateral * BigInt(Math.round(leverage * 100))) / 100n;
 
-  // PositionRouter -> MarginManager charges a position fee (0.1% = 10 bps of
-  // size, per Deploy.s.sol's POSITION_FEE_BPS) out of the LOCKED amount when
-  // opening. Vault.deposit must therefore cover collateral + fee, or
-  // increasePosition reverts with Vault.InsufficientFree (locking needs more
-  // than what's free). We pad with a small safety margin on top of the exact
-  // fee calc in case of any rounding differences between this estimate and
-  // the contract's own fee math.
   const POSITION_FEE_BPS = 10n; // 0.1%, matches deploy script
   const estimatedFee = (size * POSITION_FEE_BPS) / 10_000n;
   const FEE_SAFETY_MARGIN = (collateral * 5n) / 10_000n; // +0.05% buffer
@@ -75,7 +65,6 @@ export function TradePanel({ onTraded }: { onTraded?: () => void }) {
   // ---- reads ----
   const { data: reads, refetch: refetchReads } = useReadContracts({
     contracts: [
-      // [0] nUSD allowance to Vault
       {
         ...contracts.collateralToken,
         functionName: "allowance",
@@ -84,17 +73,20 @@ export function TradePanel({ onTraded }: { onTraded?: () => void }) {
           contracts.vault.address,
         ],
       },
-      // [1] nUSD wallet balance
       {
         ...contracts.collateralToken,
         functionName: "balanceOf",
         args: [address ?? "0x0000000000000000000000000000000000000000"],
       },
-      // [2] Vault free balance (deposited but not yet in a position)
       {
         ...contracts.vault,
         functionName: "balanceOf",
         args: [address ?? "0x0000000000000000000000000000000000000000"],
+      },
+      {
+        ...contracts.priceFeed,
+        functionName: "getPrice",
+        args: [ETH_USD_MARKET],
       },
     ],
     query: { enabled: !!address, refetchInterval: 10_000 },
@@ -103,8 +95,8 @@ export function TradePanel({ onTraded }: { onTraded?: () => void }) {
   const allowance = (reads?.[0]?.result as bigint | undefined) ?? 0n;
   const walletBalance = (reads?.[1]?.result as bigint | undefined) ?? 0n;
   const vaultBalance = (reads?.[2]?.result as bigint | undefined) ?? 0n;
+  const currentPrice = (reads?.[3]?.result as bigint | undefined) ?? 0n;
 
-  // Position reads (only when on close tab)
   const { data: longPos } = useReadContract({
     ...contracts.marginManager,
     functionName: "getPosition",
@@ -128,23 +120,43 @@ export function TradePanel({ onTraded }: { onTraded?: () => void }) {
   });
 
   // ---- writes ----
-  const { writeContract, data: writeData, isPending: isWritePending } = useWriteContract();
-  const { isLoading: isConfirming, isSuccess } = useWaitForTransactionReceipt({
-    hash: txHash,
-  });
+  const { writeContract, data: writeData, isPending: isWritePending, error: writeError } =
+    useWriteContract();
+  const {
+    isLoading: isConfirming,
+    isSuccess,
+    isError: isReceiptError,
+    error: receiptError,
+  } = useWaitForTransactionReceipt({ hash: txHash });
 
   useEffect(() => {
     if (writeData) setTxHash(writeData);
   }, [writeData]);
+
+  // Surface wallet-level errors (rejection, simulation revert before send) as toasts.
+  useEffect(() => {
+    if (writeError) {
+      show("error", "Transaction failed", decodeRevertReason(writeError));
+      setPendingStep(null);
+    }
+  }, [writeError, show]);
+
+  // Surface on-chain revert (tx mined but failed) as a toast.
+  useEffect(() => {
+    if (isReceiptError) {
+      show("error", "Transaction reverted", decodeRevertReason(receiptError));
+      setPendingStep(null);
+      setTxHash(undefined);
+    }
+  }, [isReceiptError, receiptError, show]);
 
   useEffect(() => {
     if (isSuccess) {
       setTxHash(undefined);
       refetchReads();
 
-      // Multi-step flow: after each step, advance to the next
       if (pendingStep === "approve") {
-        // Approved — now deposit (collateral + fee buffer, see note above)
+        show("success", "Approved", "nUSD spending approved for the Vault.");
         setPendingStep("deposit");
         writeContract({
           ...contracts.vault,
@@ -152,7 +164,7 @@ export function TradePanel({ onTraded }: { onTraded?: () => void }) {
           args: [depositAmount],
         });
       } else if (pendingStep === "deposit") {
-        // Deposited — now open position
+        show("success", "Deposited", `$${formatAmount(depositAmount)} moved into your Vault balance.`);
         setPendingStep("open");
         writeContract({
           ...contracts.positionRouter,
@@ -160,14 +172,17 @@ export function TradePanel({ onTraded }: { onTraded?: () => void }) {
           args: [ETH_USD_MARKET, side, size, collateral],
         });
       } else if (pendingStep === "open") {
-        // Position opened — done
+        show(
+          "success",
+          `${side === SIDE.LONG ? "Long" : "Short"} opened`,
+          `$${formatAmount(size)} position at ${leverage}x leverage.`
+        );
         setPendingStep(null);
-        setSizeInput("");
         setCollateralInput("");
+        setLeverage(1);
         onTraded?.();
       } else if (pendingStep === "close") {
-        // Position closed — now withdraw collateral from Vault
-        // Withdraw whatever is now free in the vault
+        show("success", "Position closed", "Collateral and PnL moved back to your Vault balance.");
         setPendingStep("withdraw");
         writeContract({
           ...contracts.vault,
@@ -175,7 +190,7 @@ export function TradePanel({ onTraded }: { onTraded?: () => void }) {
           args: [vaultBalance],
         });
       } else if (pendingStep === "withdraw") {
-        // Withdrawn — done
+        show("success", "Withdrawn", "Funds sent back to your wallet.");
         setPendingStep(null);
         onTraded?.();
       } else {
@@ -183,7 +198,7 @@ export function TradePanel({ onTraded }: { onTraded?: () => void }) {
         onTraded?.();
       }
     }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isSuccess]);
 
   // ---- derived state ----
@@ -193,12 +208,16 @@ export function TradePanel({ onTraded }: { onTraded?: () => void }) {
       ? ((longPos as { size: bigint } | undefined)?.size ?? 0n) > 0n
       : ((shortPos as { size: bigint } | undefined)?.size ?? 0n) > 0n;
 
+  const liqPricePreview =
+    size > 0n && collateral > 0n && currentPrice > 0n
+      ? estimateLiqPrice(size, collateral, currentPrice, MAINTENANCE_BPS, side === SIDE.LONG)
+      : null;
+
   // ---- handlers ----
   const handleOpen = useCallback(() => {
     if (!address || size === 0n || collateral === 0n) return;
 
     if (needsApproval) {
-      // Step 1: approve, then deposit, then open (chained in useEffect above)
       setPendingStep("approve");
       writeContract({
         ...contracts.collateralToken,
@@ -206,7 +225,6 @@ export function TradePanel({ onTraded }: { onTraded?: () => void }) {
         args: [contracts.vault.address, MAX_UINT256],
       });
     } else if (vaultBalance < depositAmount) {
-      // Step 2: deposit first, then open (collateral + fee buffer)
       setPendingStep("deposit");
       writeContract({
         ...contracts.vault,
@@ -214,7 +232,6 @@ export function TradePanel({ onTraded }: { onTraded?: () => void }) {
         args: [depositAmount],
       });
     } else {
-      // Vault already has enough free balance — open directly
       setPendingStep("open");
       writeContract({
         ...contracts.positionRouter,
@@ -239,10 +256,6 @@ export function TradePanel({ onTraded }: { onTraded?: () => void }) {
 
   const walletBalanceFl = (Number(walletBalance) / 1e18).toFixed(2);
   const vaultBalanceFl = (Number(vaultBalance) / 1e18).toFixed(2);
-  const leveragePreview =
-    size > 0n && collateral > 0n
-      ? (Number(size) / Number(collateral)).toFixed(1)
-      : null;
 
   function stepLabel(): string {
     if (!isLoading) return "";
@@ -270,6 +283,9 @@ export function TradePanel({ onTraded }: { onTraded?: () => void }) {
     color: "var(--text-primary)",
     border: "1px solid var(--border)",
   };
+
+  const leverageColor =
+    leverage <= 5 ? "var(--accent-long)" : leverage <= 20 ? "var(--accent-warn)" : "var(--accent-short)";
 
   return (
     <div
@@ -320,28 +336,6 @@ export function TradePanel({ onTraded }: { onTraded?: () => void }) {
 
         {tab === "open" ? (
           <>
-            {/* Size */}
-            <div>
-              <label className="text-xs mb-1.5 block" style={{ color: "var(--text-muted)" }}>
-                Position size (nUSD)
-              </label>
-              <div
-                className="flex items-center border"
-                style={{ borderColor: "var(--border)", background: "var(--bg-elevated)" }}
-              >
-                <input
-                  type="number"
-                  min="0"
-                  placeholder="0.00"
-                  value={sizeInput}
-                  onChange={(e) => setSizeInput(e.target.value)}
-                  className="flex-1 bg-transparent px-3 py-2.5 text-sm font-mono tabular-nums outline-none"
-                  style={{ color: "var(--text-primary)" }}
-                />
-                <span className="px-3 text-xs" style={{ color: "var(--text-muted)" }}>nUSD</span>
-              </div>
-            </div>
-
             {/* Collateral */}
             <div>
               <div className="flex items-center justify-between mb-1.5">
@@ -375,22 +369,62 @@ export function TradePanel({ onTraded }: { onTraded?: () => void }) {
               </div>
             </div>
 
+            {/* Leverage slider */}
+            <div>
+              <div className="flex items-center justify-between mb-1.5">
+                <label className="text-xs" style={{ color: "var(--text-muted)" }}>
+                  Leverage
+                </label>
+                <span
+                  className="font-mono text-sm font-semibold tabular-nums"
+                  style={{ color: leverageColor }}
+                >
+                  {leverage.toFixed(1)}x
+                </span>
+              </div>
+              <input
+                type="range"
+                min={1}
+                max={MAX_LEVERAGE}
+                step={0.5}
+                value={leverage}
+                onChange={(e) => setLeverage(Number(e.target.value))}
+                className="w-full"
+                style={{ accentColor: leverageColor }}
+              />
+              <div className="flex justify-between text-[10px] mt-1" style={{ color: "var(--text-muted)" }}>
+                <span>1x</span>
+                <span>25x</span>
+                <span>{MAX_LEVERAGE}x</span>
+              </div>
+            </div>
+
+            {/* Derived size */}
+            {collateral > 0n && (
+              <div className="flex justify-between text-xs px-1" style={{ color: "var(--text-muted)" }}>
+                <span>Position size</span>
+                <span className="font-mono tabular-nums" style={{ color: "var(--text-primary)" }}>
+                  ${formatAmount(size)}
+                </span>
+              </div>
+            )}
+
+            {/* Liquidation price preview */}
+            {liqPricePreview !== null && liqPricePreview > 0 && (
+              <div className="flex justify-between text-xs px-1" style={{ color: "var(--text-muted)" }}>
+                <span>Est. liquidation price</span>
+                <span className="font-mono tabular-nums" style={{ color: "var(--accent-warn)" }}>
+                  ${liqPricePreview.toFixed(2)}
+                </span>
+              </div>
+            )}
+
             {/* Vault balance info */}
             {address && vaultBalance > 0n && (
               <div className="text-xs flex justify-between px-1" style={{ color: "var(--text-muted)" }}>
                 <span>Trading collateral ready (separate from LP)</span>
                 <span className="font-mono tabular-nums" style={{ color: "var(--accent-info)" }}>
                   ${vaultBalanceFl} ready
-                </span>
-              </div>
-            )}
-
-            {/* Leverage preview */}
-            {leveragePreview && (
-              <div className="flex justify-between text-xs px-1" style={{ color: "var(--text-muted)" }}>
-                <span>Leverage</span>
-                <span className="font-mono tabular-nums" style={{ color: "var(--text-primary)" }}>
-                  {leveragePreview}x
                 </span>
               </div>
             )}
