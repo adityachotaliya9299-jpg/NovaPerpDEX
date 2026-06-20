@@ -23,9 +23,9 @@ type Tab = "open" | "close";
  * Vault.withdraw() returns nUSD to the wallet.
  *
  * Full open flow:
- *   1. nUSD.approve(Vault, MAX)          — one time
- *   2. Vault.deposit(collateralAmount)   — moves nUSD wallet → Vault free balance
- *   3. PositionRouter.increasePosition() — Vault free → locked, position opens
+ *   1. nUSD.approve(Vault, MAX)               — one time
+ *   2. Vault.deposit(collateral + fee buffer) — moves nUSD wallet → Vault free balance
+ *   3. PositionRouter.increasePosition()      — Vault free → locked, position opens
  *
  * Full close flow:
  *   1. PositionRouter.closePosition()    — position closes, collateral+PnL → Vault free
@@ -34,6 +34,12 @@ type Tab = "open" | "close";
  * This is why "Approve nUSD → CollateralVault" was wrong and caused
  * Vault.InsufficientFree revert: CollateralVault never receives ERC20 directly;
  * it only moves balances already inside Vault.
+ *
+ * IMPORTANT: depositing exactly `collateral` is also wrong and causes a
+ * second, subtler Vault.InsufficientFree revert — MarginManager charges a
+ * position fee (POSITION_FEE_BPS in Deploy.s.sol, 0.1% of size) out of the
+ * LOCKED amount when opening, so Vault needs collateral + fee sitting free,
+ * not just collateral. See depositAmount below.
  */
 
 const MAX_UINT256 = BigInt(
@@ -53,6 +59,18 @@ export function TradePanel({ onTraded }: { onTraded?: () => void }) {
 
   const size = parseWad(sizeInput);
   const collateral = parseWad(collateralInput);
+
+  // PositionRouter -> MarginManager charges a position fee (0.1% = 10 bps of
+  // size, per Deploy.s.sol's POSITION_FEE_BPS) out of the LOCKED amount when
+  // opening. Vault.deposit must therefore cover collateral + fee, or
+  // increasePosition reverts with Vault.InsufficientFree (locking needs more
+  // than what's free). We pad with a small safety margin on top of the exact
+  // fee calc in case of any rounding differences between this estimate and
+  // the contract's own fee math.
+  const POSITION_FEE_BPS = 10n; // 0.1%, matches deploy script
+  const estimatedFee = (size * POSITION_FEE_BPS) / 10_000n;
+  const FEE_SAFETY_MARGIN = (collateral * 5n) / 10_000n; // +0.05% buffer
+  const depositAmount = collateral + estimatedFee + FEE_SAFETY_MARGIN;
 
   // ---- reads ----
   const { data: reads, refetch: refetchReads } = useReadContracts({
@@ -120,48 +138,56 @@ export function TradePanel({ onTraded }: { onTraded?: () => void }) {
   }, [writeData]);
 
   useEffect(() => {
-    if (!isSuccess) return;
-    setTxHash(undefined);
-    refetchReads();
+    if (isSuccess) {
+      setTxHash(undefined);
+      refetchReads();
 
-    if (pendingStep === "approve") {
-      setPendingStep("deposit");
-      writeContract({
-        ...contracts.vault,
-        functionName: "deposit",
-        args: [collateral],
-      });
-    } else if (pendingStep === "deposit") {
-      setPendingStep("open");
-      writeContract({
-        ...contracts.positionRouter,
-        functionName: "increasePosition",
-        args: [ETH_USD_MARKET, side, size, collateral],
-      });
-    } else if (pendingStep === "open") {
-      setPendingStep(null);
-      setSizeInput("");
-      setCollateralInput("");
-      onTraded?.();
-    } else if (pendingStep === "close") {
-      setPendingStep("withdraw");
-      writeContract({
-        ...contracts.vault,
-        functionName: "withdraw",
-        args: [vaultBalance],
-      });
-    } else if (pendingStep === "withdraw") {
-      setPendingStep(null);
-      onTraded?.();
-    } else {
-      setPendingStep(null);
-      onTraded?.();
+      // Multi-step flow: after each step, advance to the next
+      if (pendingStep === "approve") {
+        // Approved — now deposit (collateral + fee buffer, see note above)
+        setPendingStep("deposit");
+        writeContract({
+          ...contracts.vault,
+          functionName: "deposit",
+          args: [depositAmount],
+        });
+      } else if (pendingStep === "deposit") {
+        // Deposited — now open position
+        setPendingStep("open");
+        writeContract({
+          ...contracts.positionRouter,
+          functionName: "increasePosition",
+          args: [ETH_USD_MARKET, side, size, collateral],
+        });
+      } else if (pendingStep === "open") {
+        // Position opened — done
+        setPendingStep(null);
+        setSizeInput("");
+        setCollateralInput("");
+        onTraded?.();
+      } else if (pendingStep === "close") {
+        // Position closed — now withdraw collateral from Vault
+        // Withdraw whatever is now free in the vault
+        setPendingStep("withdraw");
+        writeContract({
+          ...contracts.vault,
+          functionName: "withdraw",
+          args: [vaultBalance],
+        });
+      } else if (pendingStep === "withdraw") {
+        // Withdrawn — done
+        setPendingStep(null);
+        onTraded?.();
+      } else {
+        setPendingStep(null);
+        onTraded?.();
+      }
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isSuccess]);
 
   // ---- derived state ----
-  const needsApproval = !allowance || allowance < collateral;
+  const needsApproval = !allowance || allowance < depositAmount;
   const hasPosition =
     side === SIDE.LONG
       ? ((longPos as { size: bigint } | undefined)?.size ?? 0n) > 0n
@@ -172,20 +198,23 @@ export function TradePanel({ onTraded }: { onTraded?: () => void }) {
     if (!address || size === 0n || collateral === 0n) return;
 
     if (needsApproval) {
+      // Step 1: approve, then deposit, then open (chained in useEffect above)
       setPendingStep("approve");
       writeContract({
         ...contracts.collateralToken,
         functionName: "approve",
         args: [contracts.vault.address, MAX_UINT256],
       });
-    } else if (vaultBalance < collateral) {
+    } else if (vaultBalance < depositAmount) {
+      // Step 2: deposit first, then open (collateral + fee buffer)
       setPendingStep("deposit");
       writeContract({
         ...contracts.vault,
         functionName: "deposit",
-        args: [collateral],
+        args: [depositAmount],
       });
     } else {
+      // Vault already has enough free balance — open directly
       setPendingStep("open");
       writeContract({
         ...contracts.positionRouter,
@@ -193,7 +222,7 @@ export function TradePanel({ onTraded }: { onTraded?: () => void }) {
         args: [ETH_USD_MARKET, side, size, collateral],
       });
     }
-  }, [address, size, collateral, side, needsApproval, vaultBalance, writeContract]);
+  }, [address, size, collateral, depositAmount, side, needsApproval, vaultBalance, writeContract]);
 
   const handleClose = useCallback(() => {
     if (!address) return;
@@ -216,6 +245,7 @@ export function TradePanel({ onTraded }: { onTraded?: () => void }) {
       : null;
 
   function stepLabel(): string {
+    if (!isLoading) return "";
     if (isConfirming) {
       if (pendingStep === "approve") return "Approving…";
       if (pendingStep === "deposit") return "Depositing to Vault…";
@@ -229,7 +259,7 @@ export function TradePanel({ onTraded }: { onTraded?: () => void }) {
   function openButtonLabel(): string {
     if (isLoading) return stepLabel();
     if (needsApproval) return `Approve & Open ${side === SIDE.LONG ? "Long" : "Short"}`;
-    if (vaultBalance < collateral) return `Deposit & Open ${side === SIDE.LONG ? "Long" : "Short"}`;
+    if (vaultBalance < depositAmount) return `Deposit & Open ${side === SIDE.LONG ? "Long" : "Short"}`;
     return `Open ${side === SIDE.LONG ? "Long" : "Short"}`;
   }
 
@@ -292,18 +322,12 @@ export function TradePanel({ onTraded }: { onTraded?: () => void }) {
           <>
             {/* Size */}
             <div>
-              <label
-                className="text-xs mb-1.5 block"
-                style={{ color: "var(--text-muted)" }}
-              >
+              <label className="text-xs mb-1.5 block" style={{ color: "var(--text-muted)" }}>
                 Position size (nUSD)
               </label>
               <div
                 className="flex items-center border"
-                style={{
-                  borderColor: "var(--border)",
-                  background: "var(--bg-elevated)",
-                }}
+                style={{ borderColor: "var(--border)", background: "var(--bg-elevated)" }}
               >
                 <input
                   type="number"
@@ -314,9 +338,7 @@ export function TradePanel({ onTraded }: { onTraded?: () => void }) {
                   className="flex-1 bg-transparent px-3 py-2.5 text-sm font-mono tabular-nums outline-none"
                   style={{ color: "var(--text-primary)" }}
                 />
-                <span className="px-3 text-xs" style={{ color: "var(--text-muted)" }}>
-                  nUSD
-                </span>
+                <span className="px-3 text-xs" style={{ color: "var(--text-muted)" }}>nUSD</span>
               </div>
             </div>
 
@@ -338,10 +360,7 @@ export function TradePanel({ onTraded }: { onTraded?: () => void }) {
               </div>
               <div
                 className="flex items-center border"
-                style={{
-                  borderColor: "var(--border)",
-                  background: "var(--bg-elevated)",
-                }}
+                style={{ borderColor: "var(--border)", background: "var(--bg-elevated)" }}
               >
                 <input
                   type="number"
@@ -352,23 +371,15 @@ export function TradePanel({ onTraded }: { onTraded?: () => void }) {
                   className="flex-1 bg-transparent px-3 py-2.5 text-sm font-mono tabular-nums outline-none"
                   style={{ color: "var(--text-primary)" }}
                 />
-                <span className="px-3 text-xs" style={{ color: "var(--text-muted)" }}>
-                  nUSD
-                </span>
+                <span className="px-3 text-xs" style={{ color: "var(--text-muted)" }}>nUSD</span>
               </div>
             </div>
 
-            {/* Vault free balance indicator */}
+            {/* Vault balance info */}
             {address && vaultBalance > 0n && (
-              <div
-                className="text-xs flex justify-between px-1"
-                style={{ color: "var(--text-muted)" }}
-              >
+              <div className="text-xs flex justify-between px-1" style={{ color: "var(--text-muted)" }}>
                 <span>Trading collateral ready (separate from LP)</span>
-                <span
-                  className="font-mono tabular-nums"
-                  style={{ color: "var(--accent-info)" }}
-                >
+                <span className="font-mono tabular-nums" style={{ color: "var(--accent-info)" }}>
                   ${vaultBalanceFl} ready
                 </span>
               </div>
@@ -376,42 +387,25 @@ export function TradePanel({ onTraded }: { onTraded?: () => void }) {
 
             {/* Leverage preview */}
             {leveragePreview && (
-              <div
-                className="flex justify-between text-xs px-1"
-                style={{ color: "var(--text-muted)" }}
-              >
+              <div className="flex justify-between text-xs px-1" style={{ color: "var(--text-muted)" }}>
                 <span>Leverage</span>
-                <span
-                  className="font-mono tabular-nums"
-                  style={{ color: "var(--text-primary)" }}
-                >
+                <span className="font-mono tabular-nums" style={{ color: "var(--text-primary)" }}>
                   {leveragePreview}x
                 </span>
               </div>
             )}
 
-            {/* Step preview */}
+            {/* Step indicator */}
             {address && collateral > 0n && !isLoading && (
-              <div
-                className="text-[11px] px-1 space-y-0.5"
-                style={{ color: "var(--text-muted)" }}
-              >
+              <div className="text-[11px] px-1 space-y-0.5" style={{ color: "var(--text-muted)" }}>
                 {needsApproval && <div>① Approve nUSD → Vault</div>}
-                {(needsApproval || vaultBalance < collateral) && (
-                  <div>{needsApproval ? "②" : "①"} Deposit to Vault</div>
-                )}
-                <div>
-                  {needsApproval ? "③" : vaultBalance < collateral ? "②" : "①"} Open
-                  position
-                </div>
+                {(needsApproval || vaultBalance < depositAmount) && <div>{needsApproval ? "②" : "①"} Deposit to Vault</div>}
+                <div>{needsApproval ? "③" : vaultBalance < depositAmount ? "②" : "①"} Open position</div>
               </div>
             )}
 
             {!address ? (
-              <p
-                className="text-xs text-center py-2"
-                style={{ color: "var(--text-muted)" }}
-              >
+              <p className="text-xs text-center py-2" style={{ color: "var(--text-muted)" }}>
                 Connect wallet to trade
               </p>
             ) : (
@@ -433,25 +427,16 @@ export function TradePanel({ onTraded }: { onTraded?: () => void }) {
               withdraws your collateral back to your wallet automatically.
             </p>
             {!address ? (
-              <p
-                className="text-xs text-center py-2"
-                style={{ color: "var(--text-muted)" }}
-              >
+              <p className="text-xs text-center py-2" style={{ color: "var(--text-muted)" }}>
                 Connect wallet to trade
               </p>
             ) : !hasPosition ? (
-              <p
-                className="text-xs text-center py-3"
-                style={{ color: "var(--text-muted)" }}
-              >
+              <p className="text-xs text-center py-3" style={{ color: "var(--text-muted)" }}>
                 No open {side === SIDE.LONG ? "long" : "short"} position
               </p>
             ) : (
               <>
-                <div
-                  className="text-[11px] px-1 space-y-0.5"
-                  style={{ color: "var(--text-muted)" }}
-                >
+                <div className="text-[11px] px-1 space-y-0.5" style={{ color: "var(--text-muted)" }}>
                   <div>① Close position → collateral returns to Vault</div>
                   <div>② Withdraw from Vault → nUSD back to wallet</div>
                 </div>
