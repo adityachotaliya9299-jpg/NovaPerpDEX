@@ -1,22 +1,40 @@
 /**
- * NovaPerpDEX Keeper Bot 
+ * NovaPerpDEX Keeper Bot — Phase 8.3
  *
  * Runs on a fixed interval (default 5 min). Each tick:
  *   1. Scans OrderBook for executable limit orders -> executeOrder
- *   2. Scans StopLossManager triggers for accounts with open positions ->
- *      executeTrigger
- *   3. Scans MarginManager-known accounts for liquidatable positions ->
- *      LiquidationEngine.liquidate
+ *   2. Incrementally scans MarginManager's PositionIncreased event log for
+ *      newly-discovered (account, market, side) tuples, merging them into a
+ *      persistent watchlist on disk (state.json) so we never re-scan
+ *      already-processed blocks.
+ *   3. Checks the full watchlist (old + newly discovered) for executable
+ *      stop-loss triggers -> executeTrigger
+ *   4. Checks the full watchlist for liquidatable positions -> liquidate
  *
- * WHY EVENT-LOG REPLAY INSTEAD OF A REGISTRY CONTRACT CALL: None of OrderBook/StopLossManager/MarginManager expose an on-chain of "all open orders" or "all accounts with positions" — by design, storing that kind of growable array on-chain is expensive and
- * usually not needed (the frontend reads by address, not by listing everyone). The keeper has the opposite problem: it needs to discover
- * who to check. 
- * The standard fix for this exact problem is to replay the
- * contracts' own events via eth_getLogs and reconstruct a candidate set:
- *   - OrderBook.placeOrder doesn't appear to emit an event in this ABI dump, so for order IDs we just iterate 0..nextOrderId-1, which is
- *     cheap and correct since order IDs are sequential and orders() is a simple mapping read.
- *   - For stop-loss and liquidation we don't have a similarly cheapsequential ID, so we replay MarginManager's PositionIncreased event *     to build the set of (account, market, side) tuples that have ever opened a position, then check isExecutable / isLiquidatable on each.This is a watchlist, not a perfect real-time index — a subgraph (Phase 11) is the eventual proper fix and removes this log-replay
- *     entirely, but this is more than sufficient for the current scale.
+ * WHY EVENT-LOG REPLAY INSTEAD OF A REGISTRY CONTRACT CALL:
+ * None of OrderBook/StopLossManager/MarginManager expose an on-chain
+ * enumeration of "all open orders" or "all accounts with positions" — by
+ * design, storing that kind of growable array on-chain is expensive and
+ * usually not needed (the frontend reads by address, not by listing
+ * everyone). The keeper has the opposite problem: it needs to discover who
+ * to check. The standard fix for this exact problem is to replay the
+ * contracts' own events via eth_getLogs and reconstruct a candidate set.
+ *
+ * WHY INCREMENTAL (state.json) INSTEAD OF RE-SCANNING EVERY TICK:
+ * Free-tier RPC providers (Alchemy free tier, etc.) cap eth_getLogs to a
+ * tiny block range per call (Alchemy free tier: 10 blocks). Re-scanning a
+ * 50,000+ block lookback window every single tick means tens of thousands
+ * of chunked requests, repeated forever, which is both slow (the scan can
+ * take longer than the poll interval itself) and wasteful (the vast
+ * majority of those blocks were already scanned last tick and contain no
+ * new information). Instead we persist `lastScannedBlock` and the
+ * `watchlist` array built so far to keeper/state.json. On startup, if
+ * state.json exists we resume from `lastScannedBlock + 1` instead of
+ * rebuilding from EVENT_LOOKBACK_BLOCKS ago. Only the very first run ever
+ * pays the full lookback-window scan cost; every run after that only
+ * queries however many new blocks have landed since the previous tick
+ * (typically a few dozen at a 5-minute poll interval on Sepolia's ~12s
+ * blocks), which is fast even on a heavily rate-limited free tier.
  *
  * SETUP:
  *   cd keeper
@@ -34,6 +52,10 @@
  *      without you touching a terminal again.
  *   5. Start command: `npm start` (Railway auto-detects this from
  *      package.json).
+ *   NOTE: Railway's filesystem is ephemeral on redeploy — state.json will
+ *   reset to "no prior scan" on every redeploy, which just means the next
+ *   tick re-pays the full lookback scan once. Not a correctness issue,
+ *   just a one-time slow tick after any redeploy.
  *
  * SECURITY NOTE: the keeper's private key only needs gas funds (Sepolia
  * ETH) — it does not need PRICE_KEEPER_ROLE or any privileged role, since
@@ -49,15 +71,24 @@ import { createPublicClient, createWalletClient, http, parseAbiItem } from "viem
 import { privateKeyToAccount } from "viem/accounts";
 import { sepolia } from "viem/chains";
 import "dotenv/config";
+import fs from "fs";
+import path from "path";
+import { fileURLToPath } from "url";
 
 import { OrderBookAbi, StopLossManagerAbi, LiquidationEngineAbi, MarginManagerAbi } from "./abis.js";
 import deployment from "./deployment.json" with { type: "json" };
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+const STATE_FILE = path.join(__dirname, "state.json");
 
 // ---- config ----
 const RPC_URL = process.env.RPC_URL;
 const PRIVATE_KEY = process.env.PRIVATE_KEY;
 const POLL_INTERVAL_MS = Number(process.env.POLL_INTERVAL_MS ?? 5 * 60 * 1000); // 5 min default
-const EVENT_LOOKBACK_BLOCKS = BigInt(process.env.EVENT_LOOKBACK_BLOCKS ?? 500_000); // ~ a few weeks on Sepolia's ~12s blocks
+const EVENT_LOOKBACK_BLOCKS = BigInt(process.env.EVENT_LOOKBACK_BLOCKS ?? 50_000);
+const LOG_CHUNK_SIZE = BigInt(process.env.LOG_CHUNK_SIZE ?? 10);
+const LOG_CHUNK_DELAY_MS = Number(process.env.LOG_CHUNK_DELAY_MS ?? 150);
 
 if (!RPC_URL || !PRIVATE_KEY) {
   console.error("Missing RPC_URL or PRIVATE_KEY in environment. Copy .env.example to .env and fill it in.");
@@ -82,6 +113,10 @@ function log(msg) {
   console.log(`[${new Date().toISOString()}] ${msg}`);
 }
 
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
 async function safeSend(label, fn) {
   try {
     const hash = await fn();
@@ -93,6 +128,32 @@ async function safeSend(label, fn) {
     log(`  -> ${label} FAILED: ${err.shortMessage ?? err.message}`);
     return false;
   }
+}
+
+// ---- persistent state (lastScannedBlock + accumulated watchlist) ----
+function loadState() {
+  if (!fs.existsSync(STATE_FILE)) return null;
+  try {
+    const raw = JSON.parse(fs.readFileSync(STATE_FILE, "utf8"));
+    return {
+      lastScannedBlock: BigInt(raw.lastScannedBlock),
+      watchlist: raw.watchlist ?? [],
+    };
+  } catch (err) {
+    log(`State file exists but failed to parse (${err.message}) — starting fresh.`);
+    return null;
+  }
+}
+
+function saveState(lastScannedBlock, watchlist) {
+  fs.writeFileSync(
+    STATE_FILE,
+    JSON.stringify(
+      { lastScannedBlock: lastScannedBlock.toString(), watchlist, savedAt: new Date().toISOString() },
+      null,
+      2
+    )
+  );
 }
 
 // ---- 1. Orders ----
@@ -133,35 +194,14 @@ async function processOrders() {
   log(`Orders: ${executed} order(s) executed this pass.`);
 }
 
-// ---- watchlist: discover accounts via PositionIncreased event replay ----
-
-const LOG_CHUNK_SIZE = BigInt(process.env.LOG_CHUNK_SIZE ?? 10);
-const LOG_CHUNK_DELAY_MS = Number(process.env.LOG_CHUNK_DELAY_MS ?? 150);
-
-function sleep(ms) {
-  return new Promise((resolve) => setTimeout(resolve, ms));
-}
-
-async function buildAccountWatchlist() {
-  const latestBlock = await publicClient.getBlockNumber();
-  const fromBlock = latestBlock > EVENT_LOOKBACK_BLOCKS ? latestBlock - EVENT_LOOKBACK_BLOCKS : 0n;
-
-  const event = parseAbiItem(
-    "event PositionIncreased(bytes32 key, address account, bytes32 market, uint8 side, uint256 sizeDelta, uint256 collateralDelta, uint256 price)"
-  );
-
-  const totalRange = latestBlock - fromBlock;
-  const totalChunks = totalRange / LOG_CHUNK_SIZE + 1n;
-  log(`Watchlist: querying ${totalRange} blocks in chunks of ${LOG_CHUNK_SIZE} (~${totalChunks} requests, this may take a while on a rate-limited RPC)...`);
-
+// ---- watchlist: incremental discovery via PositionIncreased event replay ----
+async function scanLogRange(fromBlock, toBlock, event) {
   const allLogs = [];
   let chunkStart = fromBlock;
   let chunkCount = 0;
 
-  while (chunkStart <= latestBlock) {
-    const chunkEnd = chunkStart + LOG_CHUNK_SIZE - 1n > latestBlock
-      ? latestBlock
-      : chunkStart + LOG_CHUNK_SIZE - 1n;
+  while (chunkStart <= toBlock) {
+    const chunkEnd = chunkStart + LOG_CHUNK_SIZE - 1n > toBlock ? toBlock : chunkStart + LOG_CHUNK_SIZE - 1n;
 
     try {
       const logs = await publicClient.getLogs({
@@ -177,24 +217,56 @@ async function buildAccountWatchlist() {
 
     chunkCount++;
     chunkStart = chunkEnd + 1n;
-    if (LOG_CHUNK_DELAY_MS > 0 && chunkStart <= latestBlock) {
+    if (LOG_CHUNK_DELAY_MS > 0 && chunkStart <= toBlock) {
       await sleep(LOG_CHUNK_DELAY_MS);
     }
   }
 
-  // De-dupe by (account, market, side) — a position can be increased many
-  // times, we only need one entry per distinct position to check.
-  const seen = new Set();
-  const watchlist = [];
-  for (const l of allLogs) {
+  return { logs: allLogs, chunkCount };
+}
+
+async function buildAccountWatchlist() {
+  const latestBlock = await publicClient.getBlockNumber();
+  const event = parseAbiItem(
+    "event PositionIncreased(bytes32 key, address account, bytes32 market, uint8 side, uint256 sizeDelta, uint256 collateralDelta, uint256 price)"
+  );
+
+  const prior = loadState();
+  let fromBlock;
+  let watchlist;
+
+  if (prior && prior.lastScannedBlock < latestBlock) {
+    // Resume from where we left off — only scan new blocks.
+    fromBlock = prior.lastScannedBlock + 1n;
+    watchlist = prior.watchlist;
+    log(`Watchlist: resuming incremental scan from block ${fromBlock} to ${latestBlock} (${latestBlock - fromBlock + 1n} new blocks, ${watchlist.length} known entries).`);
+  } else if (prior && prior.lastScannedBlock >= latestBlock) {
+    // Nothing new since last tick.
+    log(`Watchlist: already up to date through block ${prior.lastScannedBlock} (${prior.watchlist.length} known entries), no new blocks to scan.`);
+    return prior.watchlist;
+  } else {
+    // First run ever — full lookback window.
+    fromBlock = latestBlock > EVENT_LOOKBACK_BLOCKS ? latestBlock - EVENT_LOOKBACK_BLOCKS : 0n;
+    watchlist = [];
+    log(`Watchlist: no prior state found, performing first full scan over ${latestBlock - fromBlock} blocks (one-time cost).`);
+  }
+
+  const { logs, chunkCount } = await scanLogRange(fromBlock, latestBlock, event);
+
+  const seen = new Set(watchlist.map((w) => `${w.account}-${w.market}-${w.side}`));
+  let newCount = 0;
+  for (const l of logs) {
     const { account, market, side } = l.args;
     const key = `${account}-${market}-${side}`;
     if (seen.has(key)) continue;
     seen.add(key);
     watchlist.push({ account, market, side });
+    newCount++;
   }
 
-  log(`Watchlist: ${watchlist.length} distinct (account, market, side) tuples from ${allLogs.length} PositionIncreased events across ${chunkCount} chunk(s).`);
+  saveState(latestBlock, watchlist);
+  log(`Watchlist: scanned ${chunkCount} chunk(s), found ${newCount} new entr${newCount === 1 ? "y" : "ies"} (${watchlist.length} total). State saved through block ${latestBlock}.`);
+
   return watchlist;
 }
 
