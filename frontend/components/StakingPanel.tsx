@@ -4,6 +4,7 @@ import { useState, useEffect } from "react";
 import { useAccount, useReadContracts, useWriteContract, useWaitForTransactionReceipt } from "wagmi";
 import { contracts } from "@/lib/contracts";
 import { formatAmount, parseWad } from "@/lib/utils/format";
+import { useToast, decodeRevertReason } from "@/components/Toast";
 
 const MAX_UINT256 = BigInt("0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff");
 
@@ -37,8 +38,10 @@ export function StakingPanel({ onChanged }: { onChanged?: () => void }) {
   const amount = parseWad(amountInput);
   const needsApproval = mode === "stake" && (!allowance || allowance < amount);
 
-  const { writeContract, data: writeData, isPending } = useWriteContract();
-  const { isLoading: isConfirming, isSuccess } = useWaitForTransactionReceipt({ hash: txHash });
+  const { show } = useToast();
+  const { writeContract, data: writeData, isPending, error: writeError } = useWriteContract();
+  const { isLoading: isConfirming, isSuccess, isError: isReceiptError, error: receiptError } =
+    useWaitForTransactionReceipt({ hash: txHash });
 
   useEffect(() => {
     if (writeData) setTxHash(writeData);
@@ -47,14 +50,32 @@ export function StakingPanel({ onChanged }: { onChanged?: () => void }) {
   useEffect(() => {
     if (isSuccess) {
       setTxHash(undefined);
+      if (lastAction === "claim") {
+        show("success", "Claimed", "nRWD rewards sent to your wallet.");
+      } else {
+        show(
+          "success",
+          lastAction === "stake" ? "Staked" : "Unstaked",
+          `${formatAmount(amount, 6)} LP shares ${lastAction === "stake" ? "now earning nRWD" : "returned to your balance"}.`
+        );
+      }
       setAmountInput("");
       refetchReads();
       onChanged?.();
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isSuccess, refetchReads, onChanged]);
+
+  useEffect(() => {
+    if (writeError) show("error", "Action failed", decodeRevertReason(writeError));
+  }, [writeError, show]);
+  useEffect(() => {
+    if (isReceiptError) show("error", "Action reverted", decodeRevertReason(receiptError));
+  }, [isReceiptError, receiptError, show]);
 
   const isLoading = isPending || isConfirming;
 
+  const [lastAction, setLastAction] = useState<Mode | "claim" | null>(null);
   function handleApprove() {
     writeContract({
       ...contracts.lpVault,
@@ -64,13 +85,16 @@ export function StakingPanel({ onChanged }: { onChanged?: () => void }) {
   }
   function handleStake() {
     if (amount === 0n) return;
+    setLastAction("stake");
     writeContract({ ...contracts.rewardDistributor, functionName: "stake", args: [amount] });
   }
   function handleUnstake() {
     if (amount === 0n) return;
+    setLastAction("unstake");
     writeContract({ ...contracts.rewardDistributor, functionName: "unstake", args: [amount] });
   }
   function handleClaim() {
+    setLastAction("claim");
     writeContract({ ...contracts.rewardDistributor, functionName: "claim", args: [] });
   }
 
