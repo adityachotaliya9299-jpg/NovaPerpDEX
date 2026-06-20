@@ -3,6 +3,7 @@ import sepoliaDeployment from "./deployments/11155111.json";
 import {
   MarginManagerAbi,
   PriceFeedAbi,
+  OracleAggregatorAbi,
   VaultAbi,
   CollateralVaultAbi,
   LeverageControllerAbi,
@@ -31,7 +32,7 @@ function addr(key: keyof typeof deployment): `0x${string}` {
 
 export const contracts = {
   marginManager: { address: addr("MarginManager"), abi: MarginManagerAbi },
-  priceFeed: { address: addr("PriceFeed"), abi: PriceFeedAbi },
+  priceFeed: { address: addr("OracleAggregator"), abi: OracleAggregatorAbi },
   vault: { address: addr("Vault"), abi: VaultAbi },
   collateralVault: { address: addr("CollateralVault"), abi: CollateralVaultAbi },
   leverageController: { address: addr("LeverageController"), abi: LeverageControllerAbi },
