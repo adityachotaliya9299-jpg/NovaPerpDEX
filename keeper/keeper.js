@@ -15,26 +15,35 @@
  * None of OrderBook/StopLossManager/MarginManager expose an on-chain
  * enumeration of "all open orders" or "all accounts with positions" — by
  * design, storing that kind of growable array on-chain is expensive and
- * usually not needed (the frontend reads by address, not by listing
- * everyone). The keeper has the opposite problem: it needs to discover who
- * to check. The standard fix for this exact problem is to replay the
- * contracts' own events via eth_getLogs and reconstruct a candidate set.
+ * usually not needed. The keeper has the opposite problem: it needs to
+ * discover who to check. The standard fix is to replay the contracts' own
+ * events via eth_getLogs and reconstruct a candidate set.
  *
  * WHY INCREMENTAL (state.json) INSTEAD OF RE-SCANNING EVERY TICK:
- * Free-tier RPC providers (Alchemy free tier, etc.) cap eth_getLogs to a
- * tiny block range per call (Alchemy free tier: 10 blocks). Re-scanning a
- * 50,000+ block lookback window every single tick means tens of thousands
- * of chunked requests, repeated forever, which is both slow (the scan can
- * take longer than the poll interval itself) and wasteful (the vast
- * majority of those blocks were already scanned last tick and contain no
- * new information). Instead we persist `lastScannedBlock` and the
- * `watchlist` array built so far to keeper/state.json. On startup, if
- * state.json exists we resume from `lastScannedBlock + 1` instead of
- * rebuilding from EVENT_LOOKBACK_BLOCKS ago. Only the very first run ever
- * pays the full lookback-window scan cost; every run after that only
- * queries however many new blocks have landed since the previous tick
- * (typically a few dozen at a 5-minute poll interval on Sepolia's ~12s
- * blocks), which is fast even on a heavily rate-limited free tier.
+ * Free-tier RPC providers cap eth_getLogs to a tiny block range per call
+ * (Alchemy free tier: 10 blocks). Re-scanning a 50,000+ block lookback
+ * window every tick means tens of thousands of chunked requests, repeated
+ * forever. We persist `lastScannedBlock` and the accumulated `watchlist`
+ * to keeper/state.json, AND we save progress incrementally every
+ * STATE_SAVE_EVERY_N_CHUNKS chunks (not just at the very end) — so if the
+ * scan is interrupted (rate limit, restart, Ctrl+C) we resume from the
+ * last successfully-saved block instead of starting over from zero. Only
+ * the very first run ever pays the full lookback-window scan cost in
+ * total; it may take several ticks to complete that first scan (resuming
+ * each time from where it left off), but it does NOT restart from
+ * scratch each time the way an unsaved-until-the-end approach would.
+ *
+ * WHY TICKS ARE REENTRANCY-GUARDED:
+ * setInterval fires strictly on the clock — it does not wait for a
+ * previous async tick() to finish. With a slow first scan (can take
+ * longer than POLL_INTERVAL_MS), naive setInterval usage causes multiple
+ * overlapping scans to run concurrently, each making their own burst of
+ * RPC calls. That multiplies load against the SAME rate limit, which is
+ * the most likely cause of cascading "HTTP request failed" errors during
+ * a slow first scan. `isTickRunning` ensures at most one tick executes
+ * at a time; if the timer fires while a tick is still in progress, that
+ * tick is simply skipped (logged, not queued) and the next timer fire
+ * will try again.
  *
  * SETUP:
  *   cd keeper
@@ -47,24 +56,17 @@
  *      of the existing monorepo — Railway can build from a subdirectory).
  *   2. New Railway project -> Deploy from GitHub -> select repo.
  *   3. Set the root directory to `keeper/` if using the monorepo.
- *   4. Add environment variables: PRIVATE_KEY, RPC_URL (same values as
- *      your local .env). Railway's free tier keeps this running 24/7
- *      without you touching a terminal again.
- *   5. Start command: `npm start` (Railway auto-detects this from
- *      package.json).
- *   NOTE: Railway's filesystem is ephemeral on redeploy — state.json will
- *   reset to "no prior scan" on every redeploy, which just means the next
- *   tick re-pays the full lookback scan once. Not a correctness issue,
- *   just a one-time slow tick after any redeploy.
+ *   4. Add environment variables: PRIVATE_KEY, RPC_URL.
+ *   5. Start command: `npm start`.
+ *   NOTE: Railway's filesystem is ephemeral on redeploy — state.json
+ *   resets on redeploy, meaning the next tick re-pays the full lookback
+ *   scan once (across multiple ticks, thanks to incremental saving — not
+ *   a single giant blocking call).
  *
  * SECURITY NOTE: the keeper's private key only needs gas funds (Sepolia
  * ETH) — it does not need PRICE_KEEPER_ROLE or any privileged role, since
- * executeOrder / executeTrigger / liquidate are all permissionless (any
- * caller can trigger them; the contracts pay the caller a keeper reward
- * out of the liquidation fee, see CollateralVault.keeperRewardBps from the
- * deploy script). Do NOT reuse your admin/deployer private key here if you
- * can avoid it — use a fresh wallet funded with a small amount of Sepolia
- * ETH for gas only.
+ * executeOrder / executeTrigger / liquidate are all permissionless. Do
+ * NOT reuse your admin/deployer private key here if you can avoid it.
  */
 
 import { createPublicClient, createWalletClient, http, parseAbiItem } from "viem";
@@ -88,7 +90,9 @@ const PRIVATE_KEY = process.env.PRIVATE_KEY;
 const POLL_INTERVAL_MS = Number(process.env.POLL_INTERVAL_MS ?? 5 * 60 * 1000); // 5 min default
 const EVENT_LOOKBACK_BLOCKS = BigInt(process.env.EVENT_LOOKBACK_BLOCKS ?? 50_000);
 const LOG_CHUNK_SIZE = BigInt(process.env.LOG_CHUNK_SIZE ?? 10);
-const LOG_CHUNK_DELAY_MS = Number(process.env.LOG_CHUNK_DELAY_MS ?? 150);
+const LOG_CHUNK_DELAY_MS = Number(process.env.LOG_CHUNK_DELAY_MS ?? 300); // raised from 150 — be gentler on free-tier rate limits
+const STATE_SAVE_EVERY_N_CHUNKS = Number(process.env.STATE_SAVE_EVERY_N_CHUNKS ?? 50);
+const MAX_CHUNKS_PER_TICK = Number(process.env.MAX_CHUNKS_PER_TICK ?? 400); // caps how much of the backlog one tick will chew through, so a tick can't run forever and overlap the next one
 
 if (!RPC_URL || !PRIVATE_KEY) {
   console.error("Missing RPC_URL or PRIVATE_KEY in environment. Copy .env.example to .env and fill it in.");
@@ -172,7 +176,7 @@ async function processOrders() {
     try {
       order = await publicClient.readContract({ ...orderBook, functionName: "orders", args: [id] });
     } catch {
-      continue; // shouldn't happen, but don't let one bad read kill the loop
+      continue;
     }
     const [, , , , , , , active] = order;
     if (!active) continue;
@@ -195,36 +199,10 @@ async function processOrders() {
 }
 
 // ---- watchlist: incremental discovery via PositionIncreased event replay ----
-async function scanLogRange(fromBlock, toBlock, event) {
-  const allLogs = [];
-  let chunkStart = fromBlock;
-  let chunkCount = 0;
-
-  while (chunkStart <= toBlock) {
-    const chunkEnd = chunkStart + LOG_CHUNK_SIZE - 1n > toBlock ? toBlock : chunkStart + LOG_CHUNK_SIZE - 1n;
-
-    try {
-      const logs = await publicClient.getLogs({
-        address: marginManager.address,
-        event,
-        fromBlock: chunkStart,
-        toBlock: chunkEnd,
-      });
-      allLogs.push(...logs);
-    } catch (err) {
-      log(`Watchlist: chunk ${chunkStart}-${chunkEnd} failed (${err.shortMessage ?? err.message}), skipping.`);
-    }
-
-    chunkCount++;
-    chunkStart = chunkEnd + 1n;
-    if (LOG_CHUNK_DELAY_MS > 0 && chunkStart <= toBlock) {
-      await sleep(LOG_CHUNK_DELAY_MS);
-    }
-  }
-
-  return { logs: allLogs, chunkCount };
-}
-
+// Scans up to MAX_CHUNKS_PER_TICK chunks, saving state every
+// STATE_SAVE_EVERY_N_CHUNKS chunks. If the full range isn't covered in one
+// tick, the next tick resumes exactly where this one left off (the saved
+// lastScannedBlock), rather than restarting the whole lookback window.
 async function buildAccountWatchlist() {
   const latestBlock = await publicClient.getBlockNumber();
   const event = parseAbiItem(
@@ -235,37 +213,74 @@ async function buildAccountWatchlist() {
   let fromBlock;
   let watchlist;
 
-  if (prior && prior.lastScannedBlock < latestBlock) {
-    // Resume from where we left off — only scan new blocks.
-    fromBlock = prior.lastScannedBlock + 1n;
-    watchlist = prior.watchlist;
-    log(`Watchlist: resuming incremental scan from block ${fromBlock} to ${latestBlock} (${latestBlock - fromBlock + 1n} new blocks, ${watchlist.length} known entries).`);
-  } else if (prior && prior.lastScannedBlock >= latestBlock) {
-    // Nothing new since last tick.
+  if (prior && prior.lastScannedBlock >= latestBlock) {
     log(`Watchlist: already up to date through block ${prior.lastScannedBlock} (${prior.watchlist.length} known entries), no new blocks to scan.`);
     return prior.watchlist;
+  } else if (prior) {
+    fromBlock = prior.lastScannedBlock + 1n;
+    watchlist = prior.watchlist;
+    log(`Watchlist: resuming scan from block ${fromBlock} (${watchlist.length} known entries so far).`);
   } else {
-    // First run ever — full lookback window.
     fromBlock = latestBlock > EVENT_LOOKBACK_BLOCKS ? latestBlock - EVENT_LOOKBACK_BLOCKS : 0n;
     watchlist = [];
-    log(`Watchlist: no prior state found, performing first full scan over ${latestBlock - fromBlock} blocks (one-time cost).`);
+    log(`Watchlist: no prior state found, starting first scan from block ${fromBlock} (full backlog may take several ticks to cover, saving progress along the way).`);
   }
-
-  const { logs, chunkCount } = await scanLogRange(fromBlock, latestBlock, event);
 
   const seen = new Set(watchlist.map((w) => `${w.account}-${w.market}-${w.side}`));
+  let chunkStart = fromBlock;
+  let chunksThisTick = 0;
   let newCount = 0;
-  for (const l of logs) {
-    const { account, market, side } = l.args;
-    const key = `${account}-${market}-${side}`;
-    if (seen.has(key)) continue;
-    seen.add(key);
-    watchlist.push({ account, market, side });
-    newCount++;
+  let lastSavedBlock = fromBlock > 0n ? fromBlock - 1n : 0n;
+
+  while (chunkStart <= latestBlock && chunksThisTick < MAX_CHUNKS_PER_TICK) {
+    const chunkEnd =
+      chunkStart + LOG_CHUNK_SIZE - 1n > latestBlock ? latestBlock : chunkStart + LOG_CHUNK_SIZE - 1n;
+
+    try {
+      const logs = await publicClient.getLogs({
+        address: marginManager.address,
+        event,
+        fromBlock: chunkStart,
+        toBlock: chunkEnd,
+      });
+      for (const l of logs) {
+        const { account, market, side } = l.args;
+        const key = `${account}-${market}-${side}`;
+        if (seen.has(key)) continue;
+        seen.add(key);
+        watchlist.push({ account, market, side });
+        newCount++;
+      }
+      lastSavedBlock = chunkEnd; // only advance our "safe to resume from" marker on success
+    } catch (err) {
+      log(`Watchlist: chunk ${chunkStart}-${chunkEnd} failed (${err.shortMessage ?? err.message}) — will retry this range next tick.`);
+      // Don't advance chunkStart/lastSavedBlock past a failed chunk — next
+      // tick (or next save below) resumes from before this failure, not
+      // after it, so we don't silently lose this range of blocks.
+      break;
+    }
+
+    chunksThisTick++;
+    chunkStart = chunkEnd + 1n;
+
+    if (chunksThisTick % STATE_SAVE_EVERY_N_CHUNKS === 0) {
+      saveState(lastSavedBlock, watchlist);
+      log(`Watchlist: progress checkpoint — scanned through block ${lastSavedBlock}, ${watchlist.length} entries so far (${chunksThisTick} chunks this tick).`);
+    }
+
+    if (LOG_CHUNK_DELAY_MS > 0 && chunkStart <= latestBlock) {
+      await sleep(LOG_CHUNK_DELAY_MS);
+    }
   }
 
-  saveState(latestBlock, watchlist);
-  log(`Watchlist: scanned ${chunkCount} chunk(s), found ${newCount} new entr${newCount === 1 ? "y" : "ies"} (${watchlist.length} total). State saved through block ${latestBlock}.`);
+  saveState(lastSavedBlock, watchlist);
+
+  const remaining = latestBlock - lastSavedBlock;
+  if (remaining > 0n) {
+    log(`Watchlist: tick budget reached (${chunksThisTick} chunks). Scanned through block ${lastSavedBlock}, ${remaining} block(s) remaining — will continue next tick. ${newCount} new entr${newCount === 1 ? "y" : "ies"} found this tick (${watchlist.length} total).`);
+  } else {
+    log(`Watchlist: caught up to latest block ${lastSavedBlock}. ${newCount} new entr${newCount === 1 ? "y" : "ies"} found this tick (${watchlist.length} total).`);
+  }
 
   return watchlist;
 }
@@ -282,7 +297,7 @@ async function processStopLoss(watchlist) {
         args: [account, market, side],
       });
     } catch {
-      continue; // no trigger set for this account/market/side — not an error
+      continue;
     }
     if (!executable) continue;
 
@@ -328,8 +343,15 @@ async function processLiquidations(watchlist) {
   log(`Liquidation: ${liquidated} position(s) liquidated this pass.`);
 }
 
-// ---- main loop ----
+// ---- main loop (reentrancy-guarded) ----
+let isTickRunning = false;
+
 async function tick() {
+  if (isTickRunning) {
+    log("Tick skipped — previous tick is still running (likely still working through the watchlist backlog).");
+    return;
+  }
+  isTickRunning = true;
   log("=== Keeper tick start ===");
   try {
     const paused = await publicClient.readContract({ ...liquidationEngine, functionName: "paused" });
@@ -346,6 +368,8 @@ async function tick() {
     }
   } catch (err) {
     log(`Tick error (will retry next interval): ${err.message}`);
+  } finally {
+    isTickRunning = false;
   }
   log("=== Keeper tick end ===\n");
 }
