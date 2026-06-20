@@ -4,6 +4,7 @@ import { useState, useEffect } from "react";
 import { useAccount, useReadContract, useWriteContract, useWaitForTransactionReceipt } from "wagmi";
 import { contracts, ETH_USD_MARKET } from "@/lib/contracts";
 import { parseWad, SIDE, type Side } from "@/lib/utils/format";
+import { useToast, decodeRevertReason } from "@/components/Toast";
 
 /**
  * StopLossManager only exposes:
@@ -46,8 +47,10 @@ export function StopLossTab() {
     query: { enabled: !!address, refetchInterval: 10_000 },
   });
 
-  const { writeContract, data: writeData, isPending } = useWriteContract();
-  const { isLoading: isConfirming, isSuccess } = useWaitForTransactionReceipt({ hash: txHash });
+  const { show } = useToast();
+  const { writeContract, data: writeData, isPending, error: writeError } = useWriteContract();
+  const { isLoading: isConfirming, isSuccess, isError: isReceiptError, error: receiptError } =
+    useWaitForTransactionReceipt({ hash: txHash });
 
   useEffect(() => {
     if (writeData) setTxHash(writeData);
@@ -56,10 +59,19 @@ export function StopLossTab() {
   useEffect(() => {
     if (isSuccess) {
       setTxHash(undefined);
+      show("success", "Trigger updated", "");
       setTriggerInput("");
       refetchExecutable();
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isSuccess, refetchExecutable]);
+
+  useEffect(() => {
+    if (writeError) show("error", "Action failed", decodeRevertReason(writeError));
+  }, [writeError, show]);
+  useEffect(() => {
+    if (isReceiptError) show("error", "Action reverted", decodeRevertReason(receiptError));
+  }, [isReceiptError, receiptError, show]);
 
   const hasPosition =
     side === SIDE.LONG
