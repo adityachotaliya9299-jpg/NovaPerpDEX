@@ -1,7 +1,14 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { createChart, ColorType, CandlestickSeries, type IChartApi, type ISeriesApi } from "lightweight-charts";
+import {
+  createChart,
+  ColorType,
+  CandlestickSeries,
+  type IChartApi,
+  type ISeriesApi,
+  type UTCTimestamp,
+} from "lightweight-charts";
 import { useReadContract } from "wagmi";
 import { contracts, ETH_USD_MARKET } from "@/lib/contracts";
 import { formatPrice } from "@/lib/utils/format";
@@ -19,7 +26,7 @@ import { formatPrice } from "@/lib/utils/format";
  * tabs open.
  */
 
-type Candle = { time: number; open: number; high: number; low: number; close: number };
+type Candle = { time: UTCTimestamp; open: number; high: number; low: number; close: number };
 
 async function fetchCandles(days: "1" | "7" | "30"): Promise<Candle[]> {
   const res = await fetch(
@@ -28,12 +35,12 @@ async function fetchCandles(days: "1" | "7" | "30"): Promise<Candle[]> {
   if (!res.ok) throw new Error(`CoinGecko returned ${res.status}`);
   const raw: [number, number, number, number, number][] = await res.json();
   return raw.map(([t, o, h, l, c]) => ({
-    time: Math.floor(t / 1000),
-    open: o,
-    high: h,
-    low: l,
-    close: c,
-  }));
+        time: Math.floor(t / 1000) as UTCTimestamp,
+        open: o,
+        high: h,
+        low: l,
+        close: c,
+    }));
 }
 
 const RANGES: { id: "1" | "7" | "30"; label: string }[] = [
@@ -124,12 +131,12 @@ export function PriceChart() {
     const nowSec = Math.floor(Date.now() / 1000);
     try {
       seriesRef.current.update({
-        time: nowSec as never,
-        open: priceNum,
-        high: priceNum,
-        low: priceNum,
-        close: priceNum,
-      });
+            time: nowSec as UTCTimestamp,
+            open: priceNum,
+            high: priceNum,
+            low: priceNum,
+            close: priceNum,
+        });
     } catch {
       // lightweight-charts throws if `time` goes backwards relative to the
       // last point — harmless to ignore, the next successful tick recovers.
