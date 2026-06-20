@@ -6,12 +6,18 @@ import { contracts } from "@/lib/contracts";
 
 const FAUCET_AMOUNT = 10_000n * 10n ** 18n; // 10,000 nUSD per claim
 const COOLDOWN_MS = 24 * 60 * 60 * 1000; // 24h cooldown (client-side only)
-const storageKey = `novaperp_faucet_last_claim_${contracts.collateralToken.address}`;
 
 export function Faucet() {
   const { address } = useAccount();
   const [txHash, setTxHash] = useState<`0x${string}` | undefined>();
   const [lastClaim, setLastClaim] = useState<number>(0);
+
+  // Key the cooldown to the token contract address, not a fixed string —
+  // otherwise a fresh deployment (new MockUSD address) inherits a stale
+  // cooldown from localStorage and the faucet button looks broken/disabled
+  // even though the wallet has zero balance on the new contracts. This bit
+  // us directly during the v2 Chainlink redeploy.
+  const storageKey = `novaperp_faucet_last_claim_${contracts.collateralToken.address}`;
 
   const { data: balance, refetch: refetchBalance } = useReadContract({
     ...contracts.collateralToken,
@@ -35,12 +41,13 @@ export function Faucet() {
       localStorage.setItem(storageKey, String(now));
       setLastClaim(now);
     }
-  }, [isSuccess, refetchBalance]);
+  }, [isSuccess, refetchBalance, storageKey]);
 
   useEffect(() => {
     const stored = localStorage.getItem(storageKey);
     if (stored) setLastClaim(Number(stored));
-  }, []);
+    else setLastClaim(0);
+  }, [storageKey]);
 
   const balanceFormatted = balance
     ? (Number(balance) / 1e18).toLocaleString("en-US", { maximumFractionDigits: 2 })
@@ -49,6 +56,7 @@ export function Faucet() {
   const cooldownRemaining = Math.max(0, COOLDOWN_MS - (Date.now() - lastClaim));
   const onCooldown = cooldownRemaining > 0;
   const hoursLeft = Math.ceil(cooldownRemaining / (1000 * 60 * 60));
+
   const isLoading = isPending || isConfirming;
 
   function handleClaim() {
