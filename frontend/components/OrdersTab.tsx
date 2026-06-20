@@ -5,6 +5,7 @@ import { useAccount, usePublicClient, useWriteContract, useWaitForTransactionRec
 import { sepolia } from "viem/chains";
 import { contracts, ETH_USD_MARKET } from "@/lib/contracts";
 import { parseWad, formatAmount, formatPrice, SIDE, type Side } from "@/lib/utils/format";
+import { useToast, decodeRevertReason } from "@/components/Toast";
 
 interface RawOrder {
   account: `0x${string}`;
@@ -28,8 +29,17 @@ function PlaceOrderForm({ onPlaced }: { onPlaced?: () => void }) {
   const [triggerAbove, setTriggerAbove] = useState(false);
   const [txHash, setTxHash] = useState<`0x${string}` | undefined>();
 
-  const { writeContract, data: writeData, isPending } = useWriteContract();
-  const { isLoading: isConfirming, isSuccess } = useWaitForTransactionReceipt({ hash: txHash });
+  const { show } = useToast();
+  const { writeContract, data: writeData, isPending, error: writeError } = useWriteContract();
+  const { isLoading: isConfirming, isSuccess, isError: isReceiptError, error: receiptError } =
+    useWaitForTransactionReceipt({ hash: txHash });
+
+  useEffect(() => {
+    if (writeError) show("error", "Order failed", decodeRevertReason(writeError));
+  }, [writeError, show]);
+  useEffect(() => {
+    if (isReceiptError) show("error", "Order reverted", decodeRevertReason(receiptError));
+  }, [isReceiptError, receiptError, show]);
 
   const size = parseWad(sizeInput);
   const collateral = parseWad(collateralInput);
@@ -39,6 +49,7 @@ function PlaceOrderForm({ onPlaced }: { onPlaced?: () => void }) {
   useEffect(() => {
     if (isSuccess) {
       setTxHash(undefined);
+      show("success", "Order placed", `${side === SIDE.LONG ? "Long" : "Short"} order will execute at ${triggerAbove ? "≥" : "≤"} $${triggerInput}.`);
       setSizeInput(""); setCollateralInput(""); setTriggerInput("");
       onPlaced?.();
     }
@@ -122,12 +133,25 @@ function OrderRow({ orderId, order, isExecutable, isOwnOrder, onChanged }: {
   isOwnOrder: boolean; onChanged?: () => void;
 }) {
   const [txHash, setTxHash] = useState<`0x${string}` | undefined>();
-  const { writeContract, data: writeData, isPending } = useWriteContract();
-  const { isLoading: isConfirming, isSuccess } = useWaitForTransactionReceipt({ hash: txHash });
+  const { show } = useToast();
+  const { writeContract, data: writeData, isPending, error: writeError } = useWriteContract();
+  const { isLoading: isConfirming, isSuccess, isError: isReceiptError, error: receiptError } =
+    useWaitForTransactionReceipt({ hash: txHash });
 
   useEffect(() => { if (writeData) setTxHash(writeData); }, [writeData]);
-  useEffect(() => { if (isSuccess) { setTxHash(undefined); onChanged?.(); } }, [isSuccess, onChanged]);
-
+  useEffect(() => {
+    if (isSuccess) {
+      setTxHash(undefined);
+      show("success", "Order updated", "");
+      onChanged?.();
+    }
+  }, [isSuccess, onChanged, show]);
+  useEffect(() => {
+    if (writeError) show("error", "Action failed", decodeRevertReason(writeError));
+  }, [writeError, show]);
+  useEffect(() => {
+    if (isReceiptError) show("error", "Action reverted", decodeRevertReason(receiptError));
+  }, [isReceiptError, receiptError, show]);
   const isLoading = isPending || isConfirming;
   const isLong = order.side === SIDE.LONG;
 
