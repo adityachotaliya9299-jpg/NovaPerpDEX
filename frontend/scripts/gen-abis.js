@@ -36,6 +36,7 @@ if (!fs.existsSync(OUT_DIR)) {
 const targets = {
   MarginManager: "MarginManager.sol",
   PriceFeed: "PriceFeed.sol",
+  OracleAggregator: "OracleAggregator.sol",
   Vault: "Vault.sol",
   CollateralVault: "CollateralVault.sol",
   LeverageController: "LeverageController.sol",
