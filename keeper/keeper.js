@@ -134,24 +134,59 @@ async function processOrders() {
 }
 
 // ---- watchlist: discover accounts via PositionIncreased event replay ----
+
+const LOG_CHUNK_SIZE = BigInt(process.env.LOG_CHUNK_SIZE ?? 10);
+const LOG_CHUNK_DELAY_MS = Number(process.env.LOG_CHUNK_DELAY_MS ?? 150);
+
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
 async function buildAccountWatchlist() {
   const latestBlock = await publicClient.getBlockNumber();
   const fromBlock = latestBlock > EVENT_LOOKBACK_BLOCKS ? latestBlock - EVENT_LOOKBACK_BLOCKS : 0n;
 
-  const logs = await publicClient.getLogs({
-    address: marginManager.address,
-    event: parseAbiItem(
-      "event PositionIncreased(bytes32 key, address account, bytes32 market, uint8 side, uint256 sizeDelta, uint256 collateralDelta, uint256 price)"
-    ),
-    fromBlock,
-    toBlock: latestBlock,
-  });
+  const event = parseAbiItem(
+    "event PositionIncreased(bytes32 key, address account, bytes32 market, uint8 side, uint256 sizeDelta, uint256 collateralDelta, uint256 price)"
+  );
+
+  const totalRange = latestBlock - fromBlock;
+  const totalChunks = totalRange / LOG_CHUNK_SIZE + 1n;
+  log(`Watchlist: querying ${totalRange} blocks in chunks of ${LOG_CHUNK_SIZE} (~${totalChunks} requests, this may take a while on a rate-limited RPC)...`);
+
+  const allLogs = [];
+  let chunkStart = fromBlock;
+  let chunkCount = 0;
+
+  while (chunkStart <= latestBlock) {
+    const chunkEnd = chunkStart + LOG_CHUNK_SIZE - 1n > latestBlock
+      ? latestBlock
+      : chunkStart + LOG_CHUNK_SIZE - 1n;
+
+    try {
+      const logs = await publicClient.getLogs({
+        address: marginManager.address,
+        event,
+        fromBlock: chunkStart,
+        toBlock: chunkEnd,
+      });
+      allLogs.push(...logs);
+    } catch (err) {
+      log(`Watchlist: chunk ${chunkStart}-${chunkEnd} failed (${err.shortMessage ?? err.message}), skipping.`);
+    }
+
+    chunkCount++;
+    chunkStart = chunkEnd + 1n;
+    if (LOG_CHUNK_DELAY_MS > 0 && chunkStart <= latestBlock) {
+      await sleep(LOG_CHUNK_DELAY_MS);
+    }
+  }
 
   // De-dupe by (account, market, side) — a position can be increased many
   // times, we only need one entry per distinct position to check.
   const seen = new Set();
   const watchlist = [];
-  for (const l of logs) {
+  for (const l of allLogs) {
     const { account, market, side } = l.args;
     const key = `${account}-${market}-${side}`;
     if (seen.has(key)) continue;
@@ -159,7 +194,7 @@ async function buildAccountWatchlist() {
     watchlist.push({ account, market, side });
   }
 
-  log(`Watchlist: ${watchlist.length} distinct (account, market, side) tuples from ${logs.length} PositionIncreased events (lookback ${EVENT_LOOKBACK_BLOCKS} blocks).`);
+  log(`Watchlist: ${watchlist.length} distinct (account, market, side) tuples from ${allLogs.length} PositionIncreased events across ${chunkCount} chunk(s).`);
   return watchlist;
 }
 
