@@ -5,6 +5,7 @@ import { useReadContract } from "wagmi";
 import { contracts, ETH_USD_MARKET } from "@/lib/contracts";
 import { formatPrice } from "@/lib/utils/format";
 import { RefreshPrice } from "@/components/RefreshPrice";
+import { Faucet } from "@/components/Faucet";
 
 export function Header() {
   const { data: price } = useReadContract({
@@ -20,6 +21,7 @@ export function Header() {
       style={{ borderColor: "var(--border)", background: "var(--bg-surface)" }}
     >
       <div className="max-w-screen-xl mx-auto px-4 h-14 flex items-center justify-between">
+        {/* Left: logo + market */}
         <div className="flex items-center gap-6">
           <span
             className="text-sm font-semibold tracking-widest uppercase"
@@ -48,7 +50,9 @@ export function Header() {
           </div>
         </div>
 
+        {/* Right: faucet + keeper control + connect */}
         <div className="flex items-center gap-3">
+          <Faucet />
           <RefreshPrice />
           <ConnectButton accountStatus="address" chainStatus="icon" showBalance={false} />
         </div>
