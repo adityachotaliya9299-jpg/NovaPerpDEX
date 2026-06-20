@@ -6,7 +6,7 @@ import { contracts } from "@/lib/contracts";
 
 const FAUCET_AMOUNT = 10_000n * 10n ** 18n; // 10,000 nUSD per claim
 const COOLDOWN_MS = 24 * 60 * 60 * 1000; // 24h cooldown (client-side only)
-const STORAGE_KEY = "novaperp_faucet_last_claim";
+const storageKey = `novaperp_faucet_last_claim_${contracts.collateralToken.address}`;
 
 export function Faucet() {
   const { address } = useAccount();
@@ -32,13 +32,13 @@ export function Faucet() {
       setTxHash(undefined);
       refetchBalance();
       const now = Date.now();
-      localStorage.setItem(STORAGE_KEY, String(now));
+      localStorage.setItem(storageKey, String(now));
       setLastClaim(now);
     }
   }, [isSuccess, refetchBalance]);
 
   useEffect(() => {
-    const stored = localStorage.getItem(STORAGE_KEY);
+    const stored = localStorage.getItem(storageKey);
     if (stored) setLastClaim(Number(stored));
   }, []);
 
