@@ -3,7 +3,9 @@
 import { useState, useEffect } from "react";
 import { useAccount, usePublicClient, useWriteContract, useWaitForTransactionReceipt } from "wagmi";
 import { sepolia } from "viem/chains";
-import { contracts, ETH_USD_MARKET } from "@/lib/contracts";
+import { contracts } from "@/lib/contracts";
+import { useMarket } from "@/lib/market-context";
+import { getMarketById } from "@/lib/markets";
 import { parseWad, formatAmount, formatPrice, SIDE, type Side } from "@/lib/utils/format";
 import { useToast, decodeRevertReason } from "@/components/Toast";
 
@@ -22,6 +24,8 @@ const MAX_ORDERS_TO_SCAN = 200;
 
 function PlaceOrderForm({ onPlaced }: { onPlaced?: () => void }) {
   const { address } = useAccount();
+  const { activeMarket } = useMarket();
+  const { show } = useToast();
   const [side, setSide] = useState<Side>(SIDE.LONG);
   const [sizeInput, setSizeInput] = useState("");
   const [collateralInput, setCollateralInput] = useState("");
@@ -29,17 +33,9 @@ function PlaceOrderForm({ onPlaced }: { onPlaced?: () => void }) {
   const [triggerAbove, setTriggerAbove] = useState(false);
   const [txHash, setTxHash] = useState<`0x${string}` | undefined>();
 
-  const { show } = useToast();
   const { writeContract, data: writeData, isPending, error: writeError } = useWriteContract();
   const { isLoading: isConfirming, isSuccess, isError: isReceiptError, error: receiptError } =
     useWaitForTransactionReceipt({ hash: txHash });
-
-  useEffect(() => {
-    if (writeError) show("error", "Order failed", decodeRevertReason(writeError));
-  }, [writeError, show]);
-  useEffect(() => {
-    if (isReceiptError) show("error", "Order reverted", decodeRevertReason(receiptError));
-  }, [isReceiptError, receiptError, show]);
 
   const size = parseWad(sizeInput);
   const collateral = parseWad(collateralInput);
@@ -49,18 +45,25 @@ function PlaceOrderForm({ onPlaced }: { onPlaced?: () => void }) {
   useEffect(() => {
     if (isSuccess) {
       setTxHash(undefined);
-      show("success", "Order placed", `${side === SIDE.LONG ? "Long" : "Short"} order will execute at ${triggerAbove ? "≥" : "≤"} $${triggerInput}.`);
+      show("success", "Order placed", `${side === SIDE.LONG ? "Long" : "Short"} ${activeMarket.symbol} order will execute at ${triggerAbove ? "≥" : "≤"} $${triggerInput}.`);
       setSizeInput(""); setCollateralInput(""); setTriggerInput("");
       onPlaced?.();
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isSuccess, onPlaced]);
+  useEffect(() => {
+    if (writeError) show("error", "Order failed", decodeRevertReason(writeError));
+  }, [writeError, show]);
+  useEffect(() => {
+    if (isReceiptError) show("error", "Order reverted", decodeRevertReason(receiptError));
+  }, [isReceiptError, receiptError, show]);
 
   function handlePlace() {
     if (!address || size === 0n || collateral === 0n || trigger === 0n) return;
     writeContract({
       ...contracts.orderBook,
       functionName: "placeOrder",
-      args: [ETH_USD_MARKET, side, size, collateral, trigger, triggerAbove],
+      args: [activeMarket.id, side, size, collateral, trigger, triggerAbove],
     });
   }
 
@@ -69,7 +72,7 @@ function PlaceOrderForm({ onPlaced }: { onPlaced?: () => void }) {
   return (
     <div className="border p-4 space-y-4" style={{ borderColor: "var(--border)", background: "var(--bg-surface)" }}>
       <h3 className="text-xs font-medium uppercase tracking-wider" style={{ color: "var(--text-muted)" }}>
-        Place Limit Order
+        Place Limit Order — {activeMarket.symbol}
       </h3>
 
       <div className="flex gap-2">
@@ -132,8 +135,8 @@ function OrderRow({ orderId, order, isExecutable, isOwnOrder, onChanged }: {
   orderId: number; order: RawOrder; isExecutable: boolean;
   isOwnOrder: boolean; onChanged?: () => void;
 }) {
-  const [txHash, setTxHash] = useState<`0x${string}` | undefined>();
   const { show } = useToast();
+  const [txHash, setTxHash] = useState<`0x${string}` | undefined>();
   const { writeContract, data: writeData, isPending, error: writeError } = useWriteContract();
   const { isLoading: isConfirming, isSuccess, isError: isReceiptError, error: receiptError } =
     useWaitForTransactionReceipt({ hash: txHash });
@@ -152,8 +155,10 @@ function OrderRow({ orderId, order, isExecutable, isOwnOrder, onChanged }: {
   useEffect(() => {
     if (isReceiptError) show("error", "Action reverted", decodeRevertReason(receiptError));
   }, [isReceiptError, receiptError, show]);
+
   const isLoading = isPending || isConfirming;
   const isLong = order.side === SIDE.LONG;
+  const marketInfo = getMarketById(order.market);
 
   return (
     <div className="p-3 border-b last:border-b-0 flex items-center justify-between gap-3" style={{ borderColor: "var(--border)" }}>
@@ -161,6 +166,9 @@ function OrderRow({ orderId, order, isExecutable, isOwnOrder, onChanged }: {
         <span className="font-semibold px-1.5 py-0.5"
           style={{ background: isLong ? "var(--accent-long)22" : "var(--accent-short)22", color: isLong ? "var(--accent-long)" : "var(--accent-short)" }}>
           {isLong ? "LONG" : "SHORT"}
+        </span>
+        <span className="text-[10px] px-1 py-0.5" style={{ background: "var(--bg-elevated)", color: "var(--text-muted)" }}>
+          {marketInfo.symbol}
         </span>
         <span className="font-mono tabular-nums" style={{ color: "var(--text-primary)" }}>
           ${formatAmount(order.sizeDelta)}
@@ -199,7 +207,6 @@ function OrderRow({ orderId, order, isExecutable, isOwnOrder, onChanged }: {
 
 function OrderList({ refreshKey }: { refreshKey: number }) {
   const { address } = useAccount();
-  // Explicitly target Sepolia so this works regardless of which chain MetaMask reports
   const client = usePublicClient({ chainId: sepolia.id });
   const [nextId, setNextId] = useState<number | null>(null);
   const [rows, setRows] = useState<{ orderId: number; order: RawOrder; isExecutable: boolean }[]>([]);
@@ -309,7 +316,7 @@ function OrderList({ refreshKey }: { refreshKey: number }) {
     <div className="border overflow-hidden" style={{ borderColor: "var(--border)", background: "var(--bg-surface)" }}>
       <div className="px-4 py-2.5 border-b flex items-center justify-between" style={{ borderColor: "var(--border)" }}>
         <span className="text-xs font-medium uppercase tracking-wider" style={{ color: "var(--text-muted)" }}>
-          Open Orders {loading && <span style={{ color: "var(--text-muted)" }}>…</span>}
+          Open Orders — All Markets {loading && <span style={{ color: "var(--text-muted)" }}>…</span>}
         </span>
         {nextId > MAX_ORDERS_TO_SCAN && (
           <span className="text-[10px]" style={{ color: "var(--accent-warn)" }}>
@@ -348,8 +355,8 @@ export function OrdersTab() {
         <p className="text-[11px] px-1" style={{ color: "var(--text-muted)" }}>
           Anyone can execute an order once it&apos;s marked READY — this is a
           permissionless keeper pattern, not limited to the order&apos;s owner.
-          Orders from all accounts are shown here since the contract has no
-          per-account index to filter by.
+          Orders from all accounts and all markets are shown here since the
+          contract has no per-account or per-market index to filter by.
         </p>
       </div>
     </div>
