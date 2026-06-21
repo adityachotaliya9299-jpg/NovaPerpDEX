@@ -41,6 +41,7 @@ export function RiskCenter() {
   const [loadingSubgraph, setLoadingSubgraph] = useState(true);
 
   const { data } = useReadContracts({
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     contracts: [
       { ...contracts.lpVault, functionName: "totalAssets" },
       { ...contracts.insuranceFund, functionName: "balance" },
@@ -48,9 +49,9 @@ export function RiskCenter() {
         { ...contracts.marginManager, functionName: "longOpenInterest", args: [m.id] },
         { ...contracts.marginManager, functionName: "shortOpenInterest", args: [m.id] },
       ]),
-    ] as unknown as readonly { result?: unknown }[],
+    ] as any[],
     query: { refetchInterval: 15_000 },
-  });
+  }) as { data: { result?: unknown }[] | undefined };
 
   useEffect(() => {
     let cancelled = false;
