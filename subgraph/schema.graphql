@@ -1,8 +1,9 @@
 """
 A limit order placed on OrderBook. Mirrors the on-chain Order struct plus
 denormalized lifecycle status, so the frontend never needs to scan order IDs.
+Mutable: the same Order row is updated as it moves through PLACED -> EXECUTED/CANCELLED.
 """
-type Order @entity {
+type Order @entity(immutable: false) {
   id: ID! # orderId as string
   account: Bytes!
   market: Bytes!
@@ -18,7 +19,8 @@ type Order @entity {
 
 """
 A single position-mutation event (open, increase, decrease, close). One row
-per on-chain event — this is the append-only trade history feed.
+per on-chain event — this is the append-only trade history feed. Never
+updated after creation.
 """
 type PositionEvent @entity(immutable: true) {
   id: ID! # txHash-logIndex
@@ -39,8 +41,9 @@ type PositionEvent @entity(immutable: true) {
 Current state of a position, keyed by the same positionKey the contract
 uses. Upserted on every increase/decrease/liquidation so a single query
 gives the live position without re-deriving it from the full event log.
+Mutable: the same Position row is updated in place as size/collateral change.
 """
-type Position @entity {
+type Position @entity(immutable: false) {
   id: ID! # positionKey (bytes32) as hex string
   account: Bytes!
   market: Bytes!
@@ -56,7 +59,7 @@ type Position @entity {
 
 """
 A liquidation event, denormalized with the data needed for a liquidations
-feed without joining back to Position.
+feed without joining back to Position. Never updated after creation.
 """
 type LiquidationEvent @entity(immutable: true) {
   id: ID! # txHash-logIndex
@@ -73,7 +76,7 @@ type LiquidationEvent @entity(immutable: true) {
 
 """
 A persisted funding-rate update. Used to chart historical funding over time
-per market.
+per market. Never updated after creation.
 """
 type FundingUpdate @entity(immutable: true) {
   id: ID! # txHash-logIndex
