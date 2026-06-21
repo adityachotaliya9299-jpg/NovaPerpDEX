@@ -1,0 +1,79 @@
+specVersion: 1.0.0
+indexerHints:
+  prune: auto
+schema:
+  file: ./schema.graphql
+dataSources:
+  - kind: ethereum
+    name: OrderBook
+    network: sepolia
+    source:
+      address: "0xcc9934584aE533Bb95591E9e626D8476301AFe12"
+      abi: OrderBook
+      startBlock: 11106000
+    mapping:
+      kind: ethereum/events
+      apiVersion: 0.0.7
+      language: wasm/assemblyscript
+      entities:
+        - Order
+      abis:
+        - name: OrderBook
+          file: ./abis/OrderBook.json
+      eventHandlers:
+        - event: OrderPlaced(indexed uint256,indexed address,indexed bytes32)
+          handler: handleOrderPlaced
+        - event: OrderCancelled(indexed uint256)
+          handler: handleOrderCancelled
+        - event: OrderExecuted(indexed uint256,uint256)
+          handler: handleOrderExecuted
+      file: ./src/order-book.ts
+
+  - kind: ethereum
+    name: MarginManager
+    network: sepolia
+    source:
+      address: "0x27619562Ed6f614f4d1DdE04F5463c87b82adc11"
+      abi: MarginManager
+      startBlock: 11106000
+    mapping:
+      kind: ethereum/events
+      apiVersion: 0.0.7
+      language: wasm/assemblyscript
+      entities:
+        - Position
+        - PositionEvent
+        - LiquidationEvent
+      abis:
+        - name: MarginManager
+          file: ./abis/MarginManager.json
+      eventHandlers:
+        - event: PositionIncreased(indexed bytes32,indexed address,indexed bytes32,uint8,uint256,uint256,uint256)
+          handler: handlePositionIncreased
+        - event: PositionDecreased(indexed bytes32,indexed address,indexed bytes32,uint256,int256,uint256)
+          handler: handlePositionDecreased
+        - event: PositionLiquidated(indexed bytes32,indexed address,indexed bytes32,address,uint256,int256,uint256)
+          handler: handlePositionLiquidated
+      file: ./src/margin-manager.ts
+
+
+  - kind: ethereum
+    name: FundingRateEngine
+    network: sepolia
+    source:
+      address: "0x3e9F59f59C9Fd2ae86A11522B5048E2B819b98B3"
+      abi: FundingRateEngine
+      startBlock: 11106000
+    mapping:
+      kind: ethereum/events
+      apiVersion: 0.0.7
+      language: wasm/assemblyscript
+      entities:
+        - FundingUpdate
+      abis:
+        - name: FundingRateEngine
+          file: ./abis/FundingRateEngine.json
+      eventHandlers:
+        - event: FundingUpdated(indexed bytes32,int256,int256)
+          handler: handleFundingUpdated
+      file: ./src/funding-rate-engine.ts
