@@ -1,0 +1,85 @@
+"""
+A limit order placed on OrderBook. Mirrors the on-chain Order struct plus
+denormalized lifecycle status, so the frontend never needs to scan order IDs.
+"""
+type Order @entity {
+  id: ID! # orderId as string
+  account: Bytes!
+  market: Bytes!
+  status: String! # "PLACED" | "EXECUTED" | "CANCELLED"
+  placedAt: BigInt!
+  placedTxHash: Bytes!
+  executedAt: BigInt
+  executedPrice: BigInt
+  executedTxHash: Bytes
+  cancelledAt: BigInt
+  cancelledTxHash: Bytes
+}
+
+"""
+A single position-mutation event (open, increase, decrease, close). One row
+per on-chain event — this is the append-only trade history feed.
+"""
+type PositionEvent @entity(immutable: true) {
+  id: ID! # txHash-logIndex
+  key: Bytes!
+  account: Bytes!
+  market: Bytes!
+  kind: String! # "INCREASE" | "DECREASE"
+  side: Int
+  sizeDelta: BigInt!
+  collateralDelta: BigInt
+  realizedPnl: BigInt
+  price: BigInt!
+  timestamp: BigInt!
+  txHash: Bytes!
+}
+
+"""
+Current state of a position, keyed by the same positionKey the contract
+uses. Upserted on every increase/decrease/liquidation so a single query
+gives the live position without re-deriving it from the full event log.
+"""
+type Position @entity {
+  id: ID! # positionKey (bytes32) as hex string
+  account: Bytes!
+  market: Bytes!
+  side: Int!
+  size: BigInt!
+  collateral: BigInt!
+  entryPrice: BigInt!
+  status: String! # "OPEN" | "CLOSED" | "LIQUIDATED"
+  openedAt: BigInt!
+  lastUpdatedAt: BigInt!
+  closedAt: BigInt
+}
+
+"""
+A liquidation event, denormalized with the data needed for a liquidations
+feed without joining back to Position.
+"""
+type LiquidationEvent @entity(immutable: true) {
+  id: ID! # txHash-logIndex
+  account: Bytes!
+  market: Bytes!
+  side: Int!
+  keeper: Bytes!
+  size: BigInt!
+  pnl: BigInt!
+  price: BigInt!
+  timestamp: BigInt!
+  txHash: Bytes!
+}
+
+"""
+A persisted funding-rate update. Used to chart historical funding over time
+per market.
+"""
+type FundingUpdate @entity(immutable: true) {
+  id: ID! # txHash-logIndex
+  market: Bytes!
+  cumulativeIndex: BigInt!
+  ratePerSecond: BigInt!
+  timestamp: BigInt!
+  txHash: Bytes!
+}
