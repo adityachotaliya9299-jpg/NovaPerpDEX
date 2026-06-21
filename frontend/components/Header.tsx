@@ -52,7 +52,13 @@ export function Header() {
           </div>
         </div>
 
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-4">
+          <a href="/vaults" className="text-xs font-medium hover:opacity-80" style={{ color: "var(--text-muted)" }}>
+            Vaults
+          </a>
+          <a href="/risk" className="text-xs font-medium hover:opacity-80" style={{ color: "var(--text-muted)" }}>
+            Risk
+          </a>
           <Faucet />
           <RefreshPrice />
           <ConnectButton accountStatus="address" chainStatus="icon" showBalance={false} />
