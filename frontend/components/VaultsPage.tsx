@@ -48,7 +48,7 @@ export function VaultsPage() {
       { ...contracts.vault, functionName: "balanceOf", args: [address ?? "0x0000000000000000000000000000000000000000"] },
       { ...contracts.vault, functionName: "lockedOf", args: [address ?? "0x0000000000000000000000000000000000000000"] },
       ...positionCalls,
-    ],
+    ] as unknown as readonly [],
     query: { refetchInterval: 15_000 },
   });
 
