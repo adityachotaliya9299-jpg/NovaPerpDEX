@@ -10,9 +10,10 @@ import { OrdersTab } from "@/components/OrdersTab";
 import { StopLossTab } from "@/components/StopLossTab";
 import { EarnTab } from "@/components/EarnTab";
 import { PortfolioTab } from "@/components/PortfolioTab";
+import { HistoryTab } from "@/components/HistoryTab";
 import { MarketStats } from "@/components/MarketStats";
 
-type BottomTab = "positions" | "orders" | "stops" | "earn" | "portfolio";
+type BottomTab = "positions" | "orders" | "stops" | "earn" | "portfolio" | "history";
 
 const BOTTOM_TABS: { id: BottomTab; label: string }[] = [
   { id: "positions", label: "Positions" },
@@ -20,6 +21,7 @@ const BOTTOM_TABS: { id: BottomTab; label: string }[] = [
   { id: "stops", label: "Stop-Loss" },
   { id: "earn", label: "Earn" },
   { id: "portfolio", label: "Portfolio" },
+  { id: "history", label: "History" },
 ];
 
 export default function TradePage() {
@@ -70,6 +72,7 @@ export default function TradePage() {
           {bottomTab === "stops" && <StopLossTab />}
           {bottomTab === "earn" && <EarnTab />}
           {bottomTab === "portfolio" && <PortfolioTab />}
+          {bottomTab === "history" && <HistoryTab />}
         </div>
       </div>
 
