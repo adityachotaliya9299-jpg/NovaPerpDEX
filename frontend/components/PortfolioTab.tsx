@@ -1,7 +1,8 @@
 "use client";
 
 import { useAccount, useReadContracts } from "wagmi";
-import { contracts, ETH_USD_MARKET } from "@/lib/contracts";
+import { contracts } from "@/lib/contracts";
+import { MARKETS, type MarketInfo } from "@/lib/markets";
 import {
   formatAmount,
   formatPnl,
@@ -36,11 +37,20 @@ function StatCard({ label, value, accent }: { label: string; value: string; acce
 export function PortfolioTab() {
   const { address } = useAccount();
 
+  const positionCalls = MARKETS.flatMap((m) => [
+    { ...contracts.marginManager, functionName: "getPosition", args: [address ?? "0x0000000000000000000000000000000000000000", m.id, SIDE.LONG] },
+    { ...contracts.marginManager, functionName: "getPosition", args: [address ?? "0x0000000000000000000000000000000000000000", m.id, SIDE.SHORT] },
+  ]);
+  const priceCalls = MARKETS.map((m) => ({
+    ...contracts.priceFeed,
+    functionName: "getPrice",
+    args: [m.id],
+  }));
+
   const { data } = useReadContracts({
     contracts: [
-      { ...contracts.marginManager, functionName: "getPosition", args: [address ?? "0x0000000000000000000000000000000000000000", ETH_USD_MARKET, SIDE.LONG] },
-      { ...contracts.marginManager, functionName: "getPosition", args: [address ?? "0x0000000000000000000000000000000000000000", ETH_USD_MARKET, SIDE.SHORT] },
-      { ...contracts.priceFeed, functionName: "getPrice", args: [ETH_USD_MARKET] },
+      ...positionCalls,
+      ...priceCalls,
       { ...contracts.lpVault, functionName: "balanceOf", args: [address ?? "0x0000000000000000000000000000000000000000"] },
       { ...contracts.lpVault, functionName: "sharePrice" },
       { ...contracts.rewardDistributor, functionName: "stakedOf", args: [address ?? "0x0000000000000000000000000000000000000000"] },
@@ -60,25 +70,36 @@ export function PortfolioTab() {
     );
   }
 
-  const longPos = data?.[0]?.result as RawPosition | undefined;
-  const shortPos = data?.[1]?.result as RawPosition | undefined;
-  const currentPrice = (data?.[2]?.result as bigint | undefined) ?? 0n;
-  const lpShares = (data?.[3]?.result as bigint | undefined) ?? 0n;
-  const sharePrice = (data?.[4]?.result as bigint | undefined) ?? 0n;
-  const stakedShares = (data?.[5]?.result as bigint | undefined) ?? 0n;
-  const earned = (data?.[6]?.result as bigint | undefined) ?? 0n;
-  const walletBalance = (data?.[7]?.result as bigint | undefined) ?? 0n;
+  const tailStart = positionCalls.length + priceCalls.length;
+  const lpShares = (data?.[tailStart]?.result as bigint | undefined) ?? 0n;
+  const sharePrice = (data?.[tailStart + 1]?.result as bigint | undefined) ?? 0n;
+  const stakedShares = (data?.[tailStart + 2]?.result as bigint | undefined) ?? 0n;
+  const earned = (data?.[tailStart + 3]?.result as bigint | undefined) ?? 0n;
+  const walletBalance = (data?.[tailStart + 4]?.result as bigint | undefined) ?? 0n;
 
-  const hasLong = longPos && longPos.size > 0n;
-  const hasShort = shortPos && shortPos.size > 0n;
+  // Aggregate PnL and gather per-market position rows across every
+  // registered market — a portfolio view that only showed ETH would be
+  // actively misleading once BTC positions exist.
+  const rows: { market: MarketInfo; label: string; position: RawPosition; currentPrice: bigint; accent: string }[] = [];
+  let totalTradingPnl = 0;
 
-  const longPnl = hasLong ? computePnl(longPos!.size, longPos!.entryPrice, currentPrice, true) : 0;
-  const shortPnl = hasShort ? computePnl(shortPos!.size, shortPos!.entryPrice, currentPrice, false) : 0;
-  const totalTradingPnl = longPnl + shortPnl;
+  MARKETS.forEach((market, i) => {
+    const longPos = data?.[i * 2]?.result as RawPosition | undefined;
+    const shortPos = data?.[i * 2 + 1]?.result as RawPosition | undefined;
+    const currentPrice = (data?.[positionCalls.length + i]?.result as bigint | undefined) ?? 0n;
 
-  // LP value: shares the user holds directly + shares currently staked,
-  // both priced at the same sharePrice (staking doesn't change the
-  // underlying share's redemption value, only who's holding it).
+    if (longPos && longPos.size > 0n) {
+      const pnl = computePnl(longPos.size, longPos.entryPrice, currentPrice, true);
+      totalTradingPnl += pnl;
+      rows.push({ market, label: "LONG", position: longPos, currentPrice, accent: "var(--accent-long)" });
+    }
+    if (shortPos && shortPos.size > 0n) {
+      const pnl = computePnl(shortPos.size, shortPos.entryPrice, currentPrice, false);
+      totalTradingPnl += pnl;
+      rows.push({ market, label: "SHORT", position: shortPos, currentPrice, accent: "var(--accent-short)" });
+    }
+  });
+
   const totalLpShares = lpShares + stakedShares;
   const lpValueUsd = wadToNumber(totalLpShares) * wadToNumber(sharePrice);
 
@@ -90,7 +111,7 @@ export function PortfolioTab() {
         <StatCard label="Wallet (nUSD)" value={`$${formatAmount(walletBalance)}`} />
         <StatCard label="LP position value" value={`$${lpValueUsd.toFixed(2)}`} accent="var(--accent-info)" />
         <StatCard
-          label="Trading PnL (unrealized)"
+          label="Trading PnL (unrealized, all markets)"
           value={formatPnl(totalTradingPnl).text}
           accent={totalTradingPnl >= 0 ? "var(--accent-long)" : "var(--accent-short)"}
         />
@@ -105,24 +126,29 @@ export function PortfolioTab() {
           ${netWorth.toFixed(2)}
         </div>
         <p className="text-[11px] mt-1" style={{ color: "var(--text-muted)" }}>
-          Wallet nUSD + LP position value + unrealized trading PnL. Doesn&apos;t
-          include unclaimed staking rewards (different token) or gas costs.
+          Wallet nUSD + LP position value + unrealized trading PnL across all
+          markets. Doesn&apos;t include unclaimed staking rewards (different
+          token) or gas costs.
         </p>
       </div>
 
-      {(hasLong || hasShort) && (
+      {rows.length > 0 && (
         <div className="border overflow-hidden" style={{ borderColor: "var(--border)", background: "var(--bg-surface)" }}>
           <div className="px-4 py-2.5 border-b" style={{ borderColor: "var(--border)" }}>
             <span className="text-xs font-medium uppercase tracking-wider" style={{ color: "var(--text-muted)" }}>
-              Open Positions
+              Open Positions — All Markets
             </span>
           </div>
-          {hasLong && (
-            <PortfolioPositionRow label="LONG" position={longPos!} currentPrice={currentPrice} accentColor="var(--accent-long)" />
-          )}
-          {hasShort && (
-            <PortfolioPositionRow label="SHORT" position={shortPos!} currentPrice={currentPrice} accentColor="var(--accent-short)" />
-          )}
+          {rows.map((r, i) => (
+            <PortfolioPositionRow
+              key={`${r.market.id}-${r.label}-${i}`}
+              label={r.label}
+              market={r.market}
+              position={r.position}
+              currentPrice={r.currentPrice}
+              accentColor={r.accent}
+            />
+          ))}
         </div>
       )}
 
@@ -152,11 +178,13 @@ export function PortfolioTab() {
 
 function PortfolioPositionRow({
   label,
+  market,
   position,
   currentPrice,
   accentColor,
 }: {
   label: string;
+  market: MarketInfo;
   position: RawPosition;
   currentPrice: bigint;
   accentColor: string;
@@ -173,7 +201,7 @@ function PortfolioPositionRow({
         <span className="font-semibold px-1.5 py-0.5" style={{ background: `${accentColor}22`, color: accentColor }}>
           {label}
         </span>
-        <span style={{ color: "var(--text-muted)" }}>ETH-USD</span>
+        <span style={{ color: "var(--text-muted)" }}>{market.symbol}</span>
         <span className="font-mono tabular-nums" style={{ color: "var(--text-primary)" }}>
           ${formatAmount(position.size)}
         </span>
