@@ -1,12 +1,3 @@
-/**
- * A thin GraphQL client for the NovaPerpDEX subgraph.
- *
- * No GraphQL library dependency needed for simple queries like these — a
- * plain fetch() POST to the Studio query endpoint is sufficient and avoids
- * pulling in urql/apollo for what's currently a handful of read-only
- * queries. If query complexity grows significantly (e.g. live subscriptions
- * via The Graph's websocket support), revisit with a proper client then.
- */
 
 const SUBGRAPH_URL =
   process.env.NEXT_PUBLIC_SUBGRAPH_URL ??
@@ -28,7 +19,7 @@ async function querySubgraph<T>(query: string, variables?: Record<string, unknow
   return json.data as T;
 }
 
-// ---- Orders (11.2) ----
+// ---- Orders 
 
 export interface SubgraphOrder {
   id: string;
@@ -74,7 +65,7 @@ export async function fetchActiveOrders(): Promise<SubgraphOrder[]> {
   return data.orders;
 }
 
-// ---- Position & trade history (11.3) ----
+// ---- Position & trade history 
 
 export interface SubgraphPositionEvent {
   id: string;
@@ -154,4 +145,102 @@ export async function fetchAccountHistory(account: string): Promise<{
     liquidationEvents: SubgraphLiquidation[];
   }>(HISTORY_QUERY, { account: account.toLowerCase() });
   return { events: data.positionEvents, liquidations: data.liquidationEvents };
+}
+
+
+export interface SubgraphPosition {
+  id: string;
+  account: string;
+  market: string;
+  side: number;
+  size: string;
+  collateral: string;
+  entryPrice: string;
+  status: string;
+  openedAt: string;
+  lastUpdatedAt: string;
+}
+
+const LARGEST_POSITIONS_QUERY = `
+  query LargestPositions {
+    positions(
+      first: 10
+      orderBy: size
+      orderDirection: desc
+      where: { status: "OPEN" }
+    ) {
+      id
+      account
+      market
+      side
+      size
+      collateral
+      entryPrice
+      status
+      openedAt
+      lastUpdatedAt
+    }
+  }
+`;
+
+export async function fetchLargestPositions(): Promise<SubgraphPosition[]> {
+  const data = await querySubgraph<{ positions: SubgraphPosition[] }>(LARGEST_POSITIONS_QUERY);
+  return data.positions;
+}
+
+const RECENT_LIQUIDATIONS_QUERY = `
+  query RecentLiquidations {
+    liquidationEvents(first: 10, orderBy: timestamp, orderDirection: desc) {
+      id
+      account
+      market
+      side
+      keeper
+      size
+      pnl
+      price
+      timestamp
+      txHash
+    }
+  }
+`;
+
+export async function fetchRecentLiquidations(): Promise<SubgraphLiquidation[]> {
+  const data = await querySubgraph<{ liquidationEvents: SubgraphLiquidation[] }>(
+    RECENT_LIQUIDATIONS_QUERY
+  );
+  return data.liquidationEvents;
+}
+
+export interface SubgraphFundingUpdate {
+  id: string;
+  market: string;
+  cumulativeIndex: string;
+  ratePerSecond: string;
+  timestamp: string;
+}
+
+const FUNDING_HISTORY_QUERY = `
+  query FundingHistory($market: Bytes!) {
+    fundingUpdates(
+      first: 200
+      orderBy: timestamp
+      orderDirection: desc
+      where: { market: $market }
+    ) {
+      id
+      market
+      cumulativeIndex
+      ratePerSecond
+      timestamp
+    }
+  }
+`;
+
+export async function fetchFundingHistory(market: string): Promise<SubgraphFundingUpdate[]> {
+  const data = await querySubgraph<{ fundingUpdates: SubgraphFundingUpdate[] }>(
+    FUNDING_HISTORY_QUERY,
+    { market: market.toLowerCase() }
+  );
+  return data.fundingUpdates.reverse(); // chronological for charting
 }
