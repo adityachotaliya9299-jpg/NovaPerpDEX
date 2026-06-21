@@ -2,7 +2,8 @@
 
 import { useEffect } from "react";
 import { useAccount, useReadContracts } from "wagmi";
-import { contracts, ETH_USD_MARKET } from "@/lib/contracts";
+import { contracts } from "@/lib/contracts";
+import { MARKETS, type MarketInfo } from "@/lib/markets";
 import {
   formatPrice,
   formatAmount,
@@ -25,12 +26,13 @@ interface RawPosition {
 
 interface PositionRowProps {
   label: string;
+  market: MarketInfo;
   position: RawPosition;
   currentPrice: bigint;
   accentColor: string;
 }
 
-function PositionRow({ label, position, currentPrice, accentColor }: PositionRowProps) {
+function PositionRow({ label, market, position, currentPrice, accentColor }: PositionRowProps) {
   const isLong = position.side === SIDE.LONG;
   const pnl = computePnl(position.size, position.entryPrice, currentPrice, isLong);
   const { text: pnlText, colorClass: pnlColor } = formatPnl(pnl);
@@ -63,7 +65,6 @@ function PositionRow({ label, position, currentPrice, accentColor }: PositionRow
       className="p-4 border-b last:border-b-0"
       style={{ borderColor: "var(--border)" }}
     >
-      {/* Header row */}
       <div className="flex items-start justify-between mb-3">
         <div className="flex items-center gap-2">
           <span
@@ -73,7 +74,7 @@ function PositionRow({ label, position, currentPrice, accentColor }: PositionRow
             {label}
           </span>
           <span className="text-sm font-medium" style={{ color: "var(--text-primary)" }}>
-            ETH-USD
+            {market.symbol}
           </span>
         </div>
         <span className={`font-mono text-sm tabular-nums font-semibold ${pnlColor}`}>
@@ -81,7 +82,6 @@ function PositionRow({ label, position, currentPrice, accentColor }: PositionRow
         </span>
       </div>
 
-      {/* Metrics grid */}
       <div className="grid grid-cols-3 gap-3 mb-3 text-xs">
         <div>
           <div style={{ color: "var(--text-muted)" }} className="mb-0.5">
@@ -109,7 +109,6 @@ function PositionRow({ label, position, currentPrice, accentColor }: PositionRow
         </div>
       </div>
 
-      {/* Health bar — the signature gradient element */}
       <div>
         <div className="flex items-center justify-between mb-1">
           <span className="text-[10px]" style={{ color: "var(--text-muted)" }}>
@@ -142,49 +141,38 @@ function PositionRow({ label, position, currentPrice, accentColor }: PositionRow
 export function PositionList({ refreshKey }: { refreshKey?: number }) {
   const { address } = useAccount();
 
+  // Query both sides of every registered market in one batch — a true
+  // portfolio view shouldn't hide a BTC position just because the chart
+  // happens to be showing ETH right now.
+  const positionCalls = MARKETS.flatMap((m) => [
+    {
+      ...contracts.marginManager,
+      functionName: "getPosition",
+      args: [address ?? "0x0000000000000000000000000000000000000000", m.id, SIDE.LONG],
+    },
+    {
+      ...contracts.marginManager,
+      functionName: "getPosition",
+      args: [address ?? "0x0000000000000000000000000000000000000000", m.id, SIDE.SHORT],
+    },
+  ]);
+  const priceCalls = MARKETS.map((m) => ({
+    ...contracts.priceFeed,
+    functionName: "getPrice",
+    args: [m.id],
+  }));
+
   const { data, refetch } = useReadContracts({
-    contracts: [
-      {
-        ...contracts.marginManager,
-        functionName: "getPosition",
-        args: [
-          address ?? "0x0000000000000000000000000000000000000000",
-          ETH_USD_MARKET,
-          SIDE.LONG,
-        ],
-      },
-      {
-        ...contracts.marginManager,
-        functionName: "getPosition",
-        args: [
-          address ?? "0x0000000000000000000000000000000000000000",
-          ETH_USD_MARKET,
-          SIDE.SHORT,
-        ],
-      },
-      {
-        ...contracts.priceFeed,
-        functionName: "getPrice",
-        args: [ETH_USD_MARKET],
-      },
-    ],
+    contracts: [...positionCalls, ...priceCalls],
     query: {
       enabled: !!address,
       refetchInterval: 10_000,
     },
   });
 
-  // Force a fresh read whenever the parent signals a trade completed
   useEffect(() => {
     if (refreshKey) refetch();
   }, [refreshKey, refetch]);
-
-  const longPos = data?.[0]?.result as RawPosition | undefined;
-  const shortPos = data?.[1]?.result as RawPosition | undefined;
-  const currentPrice = (data?.[2]?.result as bigint | undefined) ?? 0n;
-
-  const hasLong = longPos && longPos.size > 0n;
-  const hasShort = shortPos && shortPos.size > 0n;
 
   if (!address) {
     return (
@@ -199,7 +187,24 @@ export function PositionList({ refreshKey }: { refreshKey?: number }) {
     );
   }
 
-  if (!hasLong && !hasShort) {
+  // positionCalls are [long0, short0, long1, short1, ...] for MARKETS[0], MARKETS[1], ...
+  // priceCalls come right after, in the same MARKETS order.
+  const rows: { market: MarketInfo; label: string; position: RawPosition; currentPrice: bigint; accent: string }[] = [];
+
+  MARKETS.forEach((market, i) => {
+    const longPos = data?.[i * 2]?.result as RawPosition | undefined;
+    const shortPos = data?.[i * 2 + 1]?.result as RawPosition | undefined;
+    const currentPrice = (data?.[positionCalls.length + i]?.result as bigint | undefined) ?? 0n;
+
+    if (longPos && longPos.size > 0n) {
+      rows.push({ market, label: "LONG", position: longPos, currentPrice, accent: "var(--accent-long)" });
+    }
+    if (shortPos && shortPos.size > 0n) {
+      rows.push({ market, label: "SHORT", position: shortPos, currentPrice, accent: "var(--accent-short)" });
+    }
+  });
+
+  if (rows.length === 0) {
     return (
       <div
         className="border p-8 text-center"
@@ -228,25 +233,19 @@ export function PositionList({ refreshKey }: { refreshKey?: number }) {
           className="text-xs font-medium uppercase tracking-wider"
           style={{ color: "var(--text-muted)" }}
         >
-          Your Positions
+          Your Positions — All Markets
         </span>
       </div>
-      {hasLong && (
+      {rows.map((r, i) => (
         <PositionRow
-          label="LONG"
-          position={longPos!}
-          currentPrice={currentPrice}
-          accentColor="var(--accent-long)"
+          key={`${r.market.id}-${r.label}-${i}`}
+          label={r.label}
+          market={r.market}
+          position={r.position}
+          currentPrice={r.currentPrice}
+          accentColor={r.accent}
         />
-      )}
-      {hasShort && (
-        <PositionRow
-          label="SHORT"
-          position={shortPos!}
-          currentPrice={currentPrice}
-          accentColor="var(--accent-short)"
-        />
-      )}
+      ))}
     </div>
   );
 }
