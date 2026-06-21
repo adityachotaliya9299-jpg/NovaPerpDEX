@@ -120,7 +120,7 @@ export function PortfolioTab() {
       { ...contracts.collateralToken, functionName: "balanceOf", args: [address ?? "0x0000000000000000000000000000000000000000"] },
       { ...contracts.vault, functionName: "balanceOf", args: [address ?? "0x0000000000000000000000000000000000000000"] },
       { ...contracts.vault, functionName: "lockedOf", args: [address ?? "0x0000000000000000000000000000000000000000"] },
-    ] as unknown as readonly [],
+    ] as unknown as readonly { result?: unknown }[],
     query: { enabled: !!address, refetchInterval: 12_000 },
   });
 
