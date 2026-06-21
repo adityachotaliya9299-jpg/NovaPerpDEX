@@ -1,26 +1,29 @@
 "use client";
 
 import { useReadContracts } from "wagmi";
-import { contracts, ETH_USD_MARKET } from "@/lib/contracts";
+import { contracts } from "@/lib/contracts";
+import { useMarket } from "@/lib/market-context";
 import { formatAmount, formatFundingRate } from "@/lib/utils/format";
 
 export function MarketStats() {
+  const { activeMarket } = useMarket();
+
   const { data } = useReadContracts({
     contracts: [
       {
         ...contracts.marginManager,
         functionName: "longOpenInterest",
-        args: [ETH_USD_MARKET],
+        args: [activeMarket.id],
       },
       {
         ...contracts.marginManager,
         functionName: "shortOpenInterest",
-        args: [ETH_USD_MARKET],
+        args: [activeMarket.id],
       },
       {
         ...contracts.fundingRateEngine,
         functionName: "currentFundingRate",
-        args: [ETH_USD_MARKET],
+        args: [activeMarket.id],
       },
     ],
     query: { refetchInterval: 15_000 },
@@ -41,16 +44,14 @@ export function MarketStats() {
       style={{ borderColor: "var(--border)", background: "var(--bg-surface)" }}
     >
       <div className="max-w-screen-xl mx-auto flex flex-wrap items-center gap-6 text-xs">
-        {/* OI skew bar */}
         <div className="flex items-center gap-3 flex-1 min-w-[260px] max-w-sm">
           <span style={{ color: "var(--text-muted)" }} className="shrink-0">
-            Open Interest
+            {activeMarket.symbol} Open Interest
           </span>
           <div className="flex items-center gap-1.5 flex-1">
             <span className="font-mono tabular-nums" style={{ color: "var(--accent-long)" }}>
               L {longPct.toFixed(1)}%
             </span>
-            {/* Signature health-bar motif */}
             <div
               className="flex-1 h-1.5 rounded-full overflow-hidden"
               style={{ background: "var(--bg-elevated)" }}
@@ -71,7 +72,6 @@ export function MarketStats() {
           </div>
         </div>
 
-        {/* OI notional values */}
         <div className="flex items-center gap-4">
           <div className="flex items-center gap-1.5">
             <span style={{ color: "var(--text-muted)" }}>Long OI</span>
@@ -87,7 +87,6 @@ export function MarketStats() {
           </div>
         </div>
 
-        {/* Funding rate */}
         <div className="flex items-center gap-1.5">
           <span style={{ color: "var(--text-muted)" }}>Funding</span>
           <span
