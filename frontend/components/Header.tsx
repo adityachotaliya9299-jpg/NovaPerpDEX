@@ -2,16 +2,19 @@
 
 import { ConnectButton } from "@rainbow-me/rainbowkit";
 import { useReadContract } from "wagmi";
-import { contracts, ETH_USD_MARKET } from "@/lib/contracts";
+import { contracts } from "@/lib/contracts";
+import { useMarket } from "@/lib/market-context";
 import { formatPrice } from "@/lib/utils/format";
 import { RefreshPrice } from "@/components/RefreshPrice";
 import { Faucet } from "@/components/Faucet";
 
 export function Header() {
+  const { activeMarket } = useMarket();
+
   const { data: price } = useReadContract({
     ...contracts.priceFeed,
     functionName: "getPrice",
-    args: [ETH_USD_MARKET],
+    args: [activeMarket.id],
     query: { refetchInterval: 10_000 },
   });
 
@@ -21,7 +24,6 @@ export function Header() {
       style={{ borderColor: "var(--border)", background: "var(--bg-surface)" }}
     >
       <div className="max-w-screen-xl mx-auto px-4 h-14 flex items-center justify-between">
-        {/* Left: logo + market */}
         <div className="flex items-center gap-6">
           <span
             className="text-sm font-semibold tracking-widest uppercase"
@@ -32,7 +34,7 @@ export function Header() {
           <div className="flex items-center gap-3">
             <div className="flex items-center gap-1.5">
               <span className="text-xs font-medium" style={{ color: "var(--text-muted)" }}>
-                ETH-USD
+                {activeMarket.symbol}
               </span>
               <span
                 className="text-xs px-1.5 py-0.5 text-[10px]"
@@ -50,7 +52,6 @@ export function Header() {
           </div>
         </div>
 
-        {/* Right: faucet + keeper control + connect */}
         <div className="flex items-center gap-3">
           <Faucet />
           <RefreshPrice />
