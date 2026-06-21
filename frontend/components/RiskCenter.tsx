@@ -48,7 +48,7 @@ export function RiskCenter() {
         { ...contracts.marginManager, functionName: "longOpenInterest", args: [m.id] },
         { ...contracts.marginManager, functionName: "shortOpenInterest", args: [m.id] },
       ]),
-    ] as unknown as readonly [],
+    ] as unknown as readonly { result?: unknown }[],
     query: { refetchInterval: 15_000 },
   });
 
