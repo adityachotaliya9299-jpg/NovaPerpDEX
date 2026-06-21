@@ -38,6 +38,7 @@ export function VaultsPage() {
   ]);
 
   const { data } = useReadContracts({
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     contracts: [
       { ...contracts.lpVault, functionName: "totalAssets" },
       { ...contracts.lpVault, functionName: "totalSupply" },
@@ -48,9 +49,9 @@ export function VaultsPage() {
       { ...contracts.vault, functionName: "balanceOf", args: [address ?? "0x0000000000000000000000000000000000000000"] },
       { ...contracts.vault, functionName: "lockedOf", args: [address ?? "0x0000000000000000000000000000000000000000"] },
       ...positionCalls,
-    ] as unknown as readonly { result?: unknown }[],
+    ] as any[],
     query: { refetchInterval: 15_000 },
-  });
+  }) as { data: { result?: unknown }[] | undefined };
 
   const lpTvl = (data?.[0]?.result as bigint | undefined) ?? 0n;
   const lpTotalSupply = (data?.[1]?.result as bigint | undefined) ?? 0n;
