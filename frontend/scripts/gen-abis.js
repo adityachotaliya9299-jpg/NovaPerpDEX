@@ -49,6 +49,7 @@ const targets = {
   LiquidationEngine: "LiquidationEngine.sol",
   PositionRouter: "PositionRouter.sol",
   MockERC20: "MockERC20.sol",
+  InsuranceFund: "InsuranceFund.sol",
 };
 
 /**
