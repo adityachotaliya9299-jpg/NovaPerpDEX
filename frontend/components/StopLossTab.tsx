@@ -2,26 +2,15 @@
 
 import { useState, useEffect } from "react";
 import { useAccount, useReadContract, useWriteContract, useWaitForTransactionReceipt } from "wagmi";
-import { contracts, ETH_USD_MARKET } from "@/lib/contracts";
+import { contracts } from "@/lib/contracts";
+import { useMarket } from "@/lib/market-context";
 import { parseWad, SIDE, type Side } from "@/lib/utils/format";
 import { useToast, decodeRevertReason } from "@/components/Toast";
 
-/**
- * StopLossManager only exposes:
- *   - setTrigger(market, side, price, triggerAbove)
- *   - cancelTrigger(market, side)
- *   - isExecutable(account, market, side) -> bool
- *   - triggers(bytes32 key) -> struct   (key is an internal hash we can't
- *     reliably reproduce client-side without the contract source)
- *
- * There's no getTrigger(account, market, side) convenience getter. That
- * means this UI genuinely cannot show "your current stop-loss is set at
- * $X" — only whether a trigger is currently executable (price already
- * crossed it) via isExecutable. This is a real on-chain interface gap,
- * not a frontend shortcut.
- */
 export function StopLossTab() {
   const { address } = useAccount();
+  const { activeMarket } = useMarket();
+  const { show } = useToast();
   const [side, setSide] = useState<Side>(SIDE.LONG);
   const [triggerInput, setTriggerInput] = useState("");
   const [triggerAbove, setTriggerAbove] = useState(false);
@@ -30,24 +19,23 @@ export function StopLossTab() {
   const { data: longPos } = useReadContract({
     ...contracts.marginManager,
     functionName: "getPosition",
-    args: [address ?? "0x0000000000000000000000000000000000000000", ETH_USD_MARKET, SIDE.LONG],
+    args: [address ?? "0x0000000000000000000000000000000000000000", activeMarket.id, SIDE.LONG],
     query: { enabled: !!address },
   });
   const { data: shortPos } = useReadContract({
     ...contracts.marginManager,
     functionName: "getPosition",
-    args: [address ?? "0x0000000000000000000000000000000000000000", ETH_USD_MARKET, SIDE.SHORT],
+    args: [address ?? "0x0000000000000000000000000000000000000000", activeMarket.id, SIDE.SHORT],
     query: { enabled: !!address },
   });
 
   const { data: isExecutable, refetch: refetchExecutable } = useReadContract({
     ...contracts.stopLossManager,
     functionName: "isExecutable",
-    args: [address ?? "0x0000000000000000000000000000000000000000", ETH_USD_MARKET, side],
+    args: [address ?? "0x0000000000000000000000000000000000000000", activeMarket.id, side],
     query: { enabled: !!address, refetchInterval: 10_000 },
   });
 
-  const { show } = useToast();
   const { writeContract, data: writeData, isPending, error: writeError } = useWriteContract();
   const { isLoading: isConfirming, isSuccess, isError: isReceiptError, error: receiptError } =
     useWaitForTransactionReceipt({ hash: txHash });
@@ -86,7 +74,7 @@ export function StopLossTab() {
     writeContract({
       ...contracts.stopLossManager,
       functionName: "setTrigger",
-      args: [ETH_USD_MARKET, side, trigger, triggerAbove],
+      args: [activeMarket.id, side, trigger, triggerAbove],
     });
   }
 
@@ -94,7 +82,7 @@ export function StopLossTab() {
     writeContract({
       ...contracts.stopLossManager,
       functionName: "cancelTrigger",
-      args: [ETH_USD_MARKET, side],
+      args: [activeMarket.id, side],
     });
   }
 
@@ -103,7 +91,7 @@ export function StopLossTab() {
     writeContract({
       ...contracts.stopLossManager,
       functionName: "executeTrigger",
-      args: [address, ETH_USD_MARKET, side],
+      args: [address, activeMarket.id, side],
     });
   }
 
@@ -111,7 +99,7 @@ export function StopLossTab() {
     <div className="grid grid-cols-1 lg:grid-cols-[340px_1fr] gap-4 items-start">
       <div className="border p-4 space-y-4" style={{ borderColor: "var(--border)", background: "var(--bg-surface)" }}>
         <h3 className="text-xs font-medium uppercase tracking-wider" style={{ color: "var(--text-muted)" }}>
-          Stop-Loss / Take-Profit
+          Stop-Loss / Take-Profit — {activeMarket.symbol}
         </h3>
 
         <div className="flex gap-2">
@@ -145,7 +133,7 @@ export function StopLossTab() {
           </p>
         ) : !hasPosition ? (
           <p className="text-xs text-center py-3" style={{ color: "var(--text-muted)" }}>
-            You don&apos;t have an open {side === SIDE.LONG ? "long" : "short"} position on ETH-USD.
+            You don&apos;t have an open {side === SIDE.LONG ? "long" : "short"} position on {activeMarket.symbol}.
           </p>
         ) : (
           <>
@@ -212,7 +200,7 @@ export function StopLossTab() {
 
       <div className="border p-4" style={{ borderColor: "var(--border)", background: "var(--bg-surface)" }}>
         <h3 className="text-xs font-medium uppercase tracking-wider mb-3" style={{ color: "var(--text-muted)" }}>
-          Trigger Status — {side === SIDE.LONG ? "Long" : "Short"}
+          Trigger Status — {activeMarket.symbol} {side === SIDE.LONG ? "Long" : "Short"}
         </h3>
         {!address ? (
           <p className="text-sm" style={{ color: "var(--text-muted)" }}>
