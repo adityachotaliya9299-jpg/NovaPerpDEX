@@ -110,6 +110,7 @@ export function PortfolioTab() {
   }));
 
   const { data } = useReadContracts({
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     contracts: [
       ...positionCalls,
       ...priceCalls,
@@ -120,9 +121,9 @@ export function PortfolioTab() {
       { ...contracts.collateralToken, functionName: "balanceOf", args: [address ?? "0x0000000000000000000000000000000000000000"] },
       { ...contracts.vault, functionName: "balanceOf", args: [address ?? "0x0000000000000000000000000000000000000000"] },
       { ...contracts.vault, functionName: "lockedOf", args: [address ?? "0x0000000000000000000000000000000000000000"] },
-    ] as unknown as readonly { result?: unknown }[],
+    ] as any[],
     query: { enabled: !!address, refetchInterval: 12_000 },
-  });
+  }) as { data: { result?: unknown }[] | undefined };
 
   useEffect(() => {
     if (!address) return;
