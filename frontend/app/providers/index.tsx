@@ -7,6 +7,7 @@ import { RainbowKitProvider, darkTheme } from "@rainbow-me/rainbowkit";
 import "@rainbow-me/rainbowkit/styles.css";
 import { wagmiConfig } from "@/lib/wagmi";
 import { ToastProvider } from "@/components/Toast";
+import { MarketProvider } from "@/lib/market-context";
 
 const rainbowKitTheme = darkTheme({
   accentColor: "#3ddc97",
@@ -17,14 +18,15 @@ const rainbowKitTheme = darkTheme({
 });
 
 export function Providers({ children }: { children: ReactNode }) {
-  // useState ensures one QueryClient per browser session, not per render.
   const [queryClient] = useState(() => new QueryClient());
 
   return (
     <WagmiProvider config={wagmiConfig}>
       <QueryClientProvider client={queryClient}>
         <RainbowKitProvider theme={rainbowKitTheme}>
-          <ToastProvider>{children}</ToastProvider>
+          <ToastProvider>
+            <MarketProvider>{children}</MarketProvider>
+          </ToastProvider>
         </RainbowKitProvider>
       </QueryClientProvider>
     </WagmiProvider>
