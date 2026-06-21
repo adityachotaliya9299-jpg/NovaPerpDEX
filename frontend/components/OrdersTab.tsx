@@ -1,26 +1,13 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { useAccount, usePublicClient, useWriteContract, useWaitForTransactionReceipt } from "wagmi";
-import { sepolia } from "viem/chains";
+import { useAccount, useWriteContract, useWaitForTransactionReceipt } from "wagmi";
 import { contracts } from "@/lib/contracts";
 import { useMarket } from "@/lib/market-context";
 import { getMarketById } from "@/lib/markets";
-import { parseWad, formatAmount, formatPrice, SIDE, type Side } from "@/lib/utils/format";
+import { parseWad, formatAmount, SIDE, type Side } from "@/lib/utils/format";
 import { useToast, decodeRevertReason } from "@/components/Toast";
-
-interface RawOrder {
-  account: `0x${string}`;
-  market: `0x${string}`;
-  side: number;
-  sizeDelta: bigint;
-  collateralDelta: bigint;
-  triggerPrice: bigint;
-  triggerAbove: boolean;
-  active: boolean;
-}
-
-const MAX_ORDERS_TO_SCAN = 200;
+import { fetchActiveOrders, type SubgraphOrder } from "@/lib/subgraph";
 
 function PlaceOrderForm({ onPlaced }: { onPlaced?: () => void }) {
   const { address } = useAccount();
@@ -47,7 +34,9 @@ function PlaceOrderForm({ onPlaced }: { onPlaced?: () => void }) {
       setTxHash(undefined);
       show("success", "Order placed", `${side === SIDE.LONG ? "Long" : "Short"} ${activeMarket.symbol} order will execute at ${triggerAbove ? "≥" : "≤"} $${triggerInput}.`);
       setSizeInput(""); setCollateralInput(""); setTriggerInput("");
-      onPlaced?.();
+      // Subgraph indexing lags the chain by a few seconds — give it a moment
+      // before refetching, otherwise the new order won't show up yet.
+      setTimeout(() => onPlaced?.(), 3000);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isSuccess, onPlaced]);
@@ -131,8 +120,8 @@ function PlaceOrderForm({ onPlaced }: { onPlaced?: () => void }) {
   );
 }
 
-function OrderRow({ orderId, order, isExecutable, isOwnOrder, onChanged }: {
-  orderId: number; order: RawOrder; isExecutable: boolean;
+function OrderRow({ order, isExecutable, isOwnOrder, onChanged }: {
+  order: SubgraphOrder; isExecutable: boolean;
   isOwnOrder: boolean; onChanged?: () => void;
 }) {
   const { show } = useToast();
@@ -146,7 +135,7 @@ function OrderRow({ orderId, order, isExecutable, isOwnOrder, onChanged }: {
     if (isSuccess) {
       setTxHash(undefined);
       show("success", "Order updated", "");
-      onChanged?.();
+      setTimeout(() => onChanged?.(), 3000);
     }
   }, [isSuccess, onChanged, show]);
   useEffect(() => {
@@ -157,24 +146,17 @@ function OrderRow({ orderId, order, isExecutable, isOwnOrder, onChanged }: {
   }, [isReceiptError, receiptError, show]);
 
   const isLoading = isPending || isConfirming;
-  const isLong = order.side === SIDE.LONG;
   const marketInfo = getMarketById(order.market);
+  const orderIdBigInt = BigInt(order.id);
 
   return (
     <div className="p-3 border-b last:border-b-0 flex items-center justify-between gap-3" style={{ borderColor: "var(--border)" }}>
       <div className="flex items-center gap-3 text-xs">
-        <span className="font-semibold px-1.5 py-0.5"
-          style={{ background: isLong ? "var(--accent-long)22" : "var(--accent-short)22", color: isLong ? "var(--accent-long)" : "var(--accent-short)" }}>
-          {isLong ? "LONG" : "SHORT"}
-        </span>
         <span className="text-[10px] px-1 py-0.5" style={{ background: "var(--bg-elevated)", color: "var(--text-muted)" }}>
           {marketInfo.symbol}
         </span>
-        <span className="font-mono tabular-nums" style={{ color: "var(--text-primary)" }}>
-          ${formatAmount(order.sizeDelta)}
-        </span>
-        <span style={{ color: "var(--text-muted)" }}>
-          {order.triggerAbove ? "≥" : "≤"} {formatPrice(order.triggerPrice)}
+        <span className="font-mono tabular-nums" style={{ color: "var(--text-muted)" }}>
+          #{order.id}
         </span>
         {isExecutable && (
           <span className="text-[10px] font-medium" style={{ color: "var(--accent-warn)" }}>READY</span>
@@ -187,14 +169,14 @@ function OrderRow({ orderId, order, isExecutable, isOwnOrder, onChanged }: {
       </div>
       <div className="flex items-center gap-2">
         {isExecutable && (
-          <button onClick={() => writeContract({ ...contracts.orderBook, functionName: "executeOrder", args: [BigInt(orderId)] })}
+          <button onClick={() => writeContract({ ...contracts.orderBook, functionName: "executeOrder", args: [orderIdBigInt] })}
             disabled={isLoading} className="text-[11px] font-semibold px-2 py-1 transition-opacity disabled:opacity-50"
             style={{ background: "var(--accent-warn)", color: "var(--bg-base)" }}>
             Execute
           </button>
         )}
         {isOwnOrder && (
-          <button onClick={() => writeContract({ ...contracts.orderBook, functionName: "cancelOrder", args: [BigInt(orderId)] })}
+          <button onClick={() => writeContract({ ...contracts.orderBook, functionName: "cancelOrder", args: [orderIdBigInt] })}
             disabled={isLoading} className="text-[11px] px-2 py-1 transition-opacity disabled:opacity-50"
             style={{ color: "var(--text-muted)", border: "1px solid var(--border)" }}>
             Cancel
@@ -207,106 +189,78 @@ function OrderRow({ orderId, order, isExecutable, isOwnOrder, onChanged }: {
 
 function OrderList({ refreshKey }: { refreshKey: number }) {
   const { address } = useAccount();
-  const client = usePublicClient({ chainId: sepolia.id });
-  const [nextId, setNextId] = useState<number | null>(null);
-  const [rows, setRows] = useState<{ orderId: number; order: RawOrder; isExecutable: boolean }[]>([]);
-  const [loading, setLoading] = useState(false);
+  const [orders, setOrders] = useState<SubgraphOrder[]>([]);
+  const [executableMap, setExecutableMap] = useState<Record<string, boolean>>({});
+  const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
   async function load() {
-    if (!client) {
-      setError("No RPC client available");
-      return;
-    }
     setLoading(true);
     setError(null);
     try {
-      const nid = await client.readContract({
-        ...contracts.orderBook,
-        functionName: "nextOrderId",
-        args: [],
-      }) as bigint;
-      const n = Number(nid);
-      setNextId(n);
-      if (n === 0) { setRows([]); return; }
+      const active = await fetchActiveOrders();
+      setOrders(active);
 
-      const scanCount = Math.min(n, MAX_ORDERS_TO_SCAN);
-      const startId = n - scanCount;
+      // isExecutable still needs a live on-chain read per order — the
+      // subgraph knows an order EXISTS and is PLACED, but "has price
+      // crossed the trigger yet" is live state the indexer doesn't track.
+      // This is a much smaller set of reads than the old full-scan
+      // approach (only active orders, not every order ever placed).
+      const { contracts: contractsLib } = await import("@/lib/contracts");
+      const { createPublicClient, http } = await import("viem");
+      const { sepolia } = await import("viem/chains");
+      const client = createPublicClient({ chain: sepolia, transport: http() });
 
-      const fetches = await Promise.allSettled(
-        Array.from({ length: scanCount }, async (_, i) => {
-          const orderId = startId + i;
-          const [rawOrder, isExec] = await Promise.all([
-            client.readContract({
-              ...contracts.orderBook,
-              functionName: "orders",
-              args: [BigInt(orderId)],
-            }),
-            client.readContract({
-              ...contracts.orderBook,
-              functionName: "isExecutable",
-              args: [BigInt(orderId)],
-            }).catch(() => false),
-          ]);
-          return { orderId, rawOrder, isExec: isExec as boolean };
-        })
+      const results = await Promise.allSettled(
+        active.map((o) =>
+          client.readContract({
+            ...contractsLib.orderBook,
+            functionName: "isExecutable",
+            args: [BigInt(o.id)],
+          })
+        )
       );
-
-      const result: typeof rows = [];
-      for (const f of fetches) {
-        if (f.status !== "fulfilled") continue;
-        const { orderId, rawOrder, isExec } = f.value;
-         const t = rawOrder as unknown as readonly unknown[];
-        const active = Boolean(t[7]);
-        if (!active) continue;
-        const order: RawOrder = {
-          account: t[0] as `0x${string}`,
-          market: t[1] as `0x${string}`,
-          side: Number(t[2]),
-          sizeDelta: t[3] as bigint,
-          collateralDelta: t[4] as bigint,
-          triggerPrice: t[5] as bigint,
-          triggerAbove: Boolean(t[6]),
-          active: true,
-        };
-        result.push({ orderId, order, isExecutable: isExec });
-      }
-      setRows(result.reverse());
+      const map: Record<string, boolean> = {};
+      results.forEach((r, i) => {
+        map[active[i].id] = r.status === "fulfilled" ? (r.value as boolean) : false;
+      });
+      setExecutableMap(map);
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
       setError(msg);
-      console.error("OrderList load error", e);
+      console.error("OrderList (subgraph) load error", e);
     } finally {
       setLoading(false);
     }
   }
 
   useEffect(() => {
-    if (!client) return;
     load();
     const interval = setInterval(load, 15_000);
     return () => clearInterval(interval);
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [refreshKey, client]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [refreshKey]);
 
-  if (nextId === null) {
+  if (loading && orders.length === 0) {
     return (
       <div className="border p-8 text-center" style={{ borderColor: "var(--border)", background: "var(--bg-surface)" }}>
-        {error ? (
-          <p className="text-xs" style={{ color: "var(--accent-short)" }}>
-            Failed to load orders: {error}
-          </p>
-        ) : (
-          <p className="text-xs" style={{ color: "var(--text-muted)" }}>Loading orders…</p>
-        )}
+        <p className="text-xs" style={{ color: "var(--text-muted)" }}>Loading orders…</p>
       </div>
     );
   }
 
-  if (nextId === 0) {
+  if (error) {
     return (
       <div className="border p-8 text-center" style={{ borderColor: "var(--border)", background: "var(--bg-surface)" }}>
-        <p className="text-sm font-medium mb-1" style={{ color: "var(--text-primary)" }}>No orders yet</p>
+        <p className="text-xs" style={{ color: "var(--accent-short)" }}>Failed to load orders: {error}</p>
+      </div>
+    );
+  }
+
+  if (orders.length === 0) {
+    return (
+      <div className="border p-8 text-center" style={{ borderColor: "var(--border)", background: "var(--bg-surface)" }}>
+        <p className="text-sm font-medium mb-1" style={{ color: "var(--text-primary)" }}>No active orders</p>
         <p className="text-xs" style={{ color: "var(--text-muted)" }}>Place a limit order using the panel on the left.</p>
       </div>
     );
@@ -314,32 +268,20 @@ function OrderList({ refreshKey }: { refreshKey: number }) {
 
   return (
     <div className="border overflow-hidden" style={{ borderColor: "var(--border)", background: "var(--bg-surface)" }}>
-      <div className="px-4 py-2.5 border-b flex items-center justify-between" style={{ borderColor: "var(--border)" }}>
+      <div className="px-4 py-2.5 border-b" style={{ borderColor: "var(--border)" }}>
         <span className="text-xs font-medium uppercase tracking-wider" style={{ color: "var(--text-muted)" }}>
           Open Orders — All Markets {loading && <span style={{ color: "var(--text-muted)" }}>…</span>}
         </span>
-        {nextId > MAX_ORDERS_TO_SCAN && (
-          <span className="text-[10px]" style={{ color: "var(--accent-warn)" }}>
-            Showing most recent {MAX_ORDERS_TO_SCAN} of {nextId}
-          </span>
-        )}
       </div>
-      {error && (
-        <p className="text-xs text-center py-3" style={{ color: "var(--accent-short)" }}>
-          {error}
-        </p>
-      )}
-      {rows.length === 0 && !error ? (
-        <p className="text-xs text-center py-6" style={{ color: "var(--text-muted)" }}>
-          No active orders right now.
-        </p>
-      ) : (
-        rows.map(({ orderId, order, isExecutable }) => (
-          <OrderRow key={orderId} orderId={orderId} order={order} isExecutable={isExecutable}
-            isOwnOrder={!!address && order.account.toLowerCase() === address.toLowerCase()}
-            onChanged={load} />
-        ))
-      )}
+      {orders.map((order) => (
+        <OrderRow
+          key={order.id}
+          order={order}
+          isExecutable={executableMap[order.id] ?? false}
+          isOwnOrder={!!address && order.account.toLowerCase() === address.toLowerCase()}
+          onChanged={load}
+        />
+      ))}
     </div>
   );
 }
@@ -353,10 +295,10 @@ export function OrdersTab() {
       <div className="space-y-4">
         <OrderList refreshKey={refreshKey} />
         <p className="text-[11px] px-1" style={{ color: "var(--text-muted)" }}>
-          Anyone can execute an order once it&apos;s marked READY — this is a
-          permissionless keeper pattern, not limited to the order&apos;s owner.
-          Orders from all accounts and all markets are shown here since the
-          contract has no per-account or per-market index to filter by.
+          Order history is indexed via subgraph — instant load regardless of
+          how many orders have ever been placed. Anyone can execute an order
+          once it&apos;s marked READY, a permissionless keeper pattern not
+          limited to the order&apos;s owner.
         </p>
       </div>
     </div>
