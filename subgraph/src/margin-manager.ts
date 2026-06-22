@@ -1,4 +1,4 @@
-import { BigInt } from "@graphprotocol/graph-ts";
+import { BigInt, Address } from "@graphprotocol/graph-ts";
 import { Position, PositionEvent, LiquidationEvent, TraderVolume } from "../generated/schema";
 import {
   PositionIncreased,
@@ -6,7 +6,7 @@ import {
   PositionLiquidated,
 } from "../generated/MarginManager/MarginManager";
 
-function bumpVolume(account: string, accountBytes: PositionIncreased["params"]["account"], sizeDelta: BigInt, timestamp: BigInt): void {
+function bumpVolume(account: string, accountBytes: Address, sizeDelta: BigInt, timestamp: BigInt): void {
   let tv = TraderVolume.load(account);
   if (tv == null) {
     tv = new TraderVolume(account);
@@ -36,7 +36,7 @@ export function handlePositionIncreased(event: PositionIncreased): void {
 
   position.size = position.size.plus(event.params.sizeDelta);
   position.collateral = position.collateral.plus(event.params.collateralDelta);
-  position.entryPrice = event.params.price; // last trade price; the true blended entry lives on-chain, this approximates it for display
+  position.entryPrice = event.params.price;
   position.status = "OPEN";
   position.lastUpdatedAt = event.block.timestamp;
   position.save();
@@ -116,7 +116,7 @@ export function handlePositionLiquidated(event: PositionLiquidated): void {
   );
   liq.account = event.params.account;
   liq.market = event.params.market;
-  liq.side = position != null ? position.side : 0; // PositionLiquidated doesn't carry side directly; the now-cleared Position still has it loaded above
+  liq.side = position != null ? position.side : 0;
   liq.keeper = event.params.keeper;
   liq.size = event.params.size;
   liq.pnl = event.params.pnl;
