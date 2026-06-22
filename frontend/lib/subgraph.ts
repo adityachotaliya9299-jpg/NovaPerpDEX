@@ -1,8 +1,7 @@
 
 const SUBGRAPH_URL =
   process.env.NEXT_PUBLIC_SUBGRAPH_URL ??
-  "https://api.studio.thegraph.com/query/1755484/novaperpdex/v0.1.0";
-
+  "https://api.studio.thegraph.com/query/1755484/novaperpdex/v0.2.0";
 async function querySubgraph<T>(query: string, variables?: Record<string, unknown>): Promise<T> {
   const res = await fetch(SUBGRAPH_URL, {
     method: "POST",
@@ -242,5 +241,45 @@ export async function fetchFundingHistory(market: string): Promise<SubgraphFundi
     FUNDING_HISTORY_QUERY,
     { market: market.toLowerCase() }
   );
-  return data.fundingUpdates.reverse(); // chronological for charting
+  return data.fundingUpdates.reverse(); 
+}
+
+
+export interface SubgraphTraderVolume {
+  id: string;
+  account: string;
+  totalVolume: string;
+  tradeCount: number;
+  lastTradeAt: string;
+}
+
+const LEADERBOARD_QUERY = `
+  query Leaderboard {
+    traderVolumes(
+      first: 50
+      orderBy: totalVolume
+      orderDirection: desc
+    ) {
+      id
+      account
+      totalVolume
+      tradeCount
+      lastTradeAt
+    }
+  }
+`;
+
+export async function fetchLeaderboard(): Promise<SubgraphTraderVolume[]> {
+  const url =
+    process.env.NEXT_PUBLIC_SUBGRAPH_URL ??
+    "https://api.studio.thegraph.com/query/1755484/novaperpdex/v0.2.0";
+  const res = await fetch(url, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ query: LEADERBOARD_QUERY }),
+  });
+  if (!res.ok) throw new Error(`Subgraph request failed: ${res.status}`);
+  const json = await res.json();
+  if (json.errors) throw new Error(json.errors[0]?.message ?? "unknown");
+  return (json.data as { traderVolumes: SubgraphTraderVolume[] }).traderVolumes;
 }
