@@ -86,3 +86,18 @@ type FundingUpdate @entity(immutable: true) {
   timestamp: BigInt!
   txHash: Bytes!
 }
+
+"""
+Phase 13.5 — running total trading volume per account, across all markets,
+both sides, both increases and decreases (volume counts notional touched,
+not net position change). Updated incrementally in the same handlers that
+already write PositionEvent, so no separate data source is needed. Powers
+the Rewards Hub leaderboard. Mutable: incremented on every trade.
+"""
+type TraderVolume @entity(immutable: false) {
+  id: ID! # account address, lowercase hex
+  account: Bytes!
+  totalVolume: BigInt!
+  tradeCount: Int!
+  lastTradeAt: BigInt!
+}
