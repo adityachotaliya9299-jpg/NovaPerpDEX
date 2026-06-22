@@ -1,10 +1,24 @@
 import { BigInt } from "@graphprotocol/graph-ts";
-import { Position, PositionEvent, LiquidationEvent } from "../generated/schema";
+import { Position, PositionEvent, LiquidationEvent, TraderVolume } from "../generated/schema";
 import {
   PositionIncreased,
   PositionDecreased,
   PositionLiquidated,
 } from "../generated/MarginManager/MarginManager";
+
+function bumpVolume(account: string, accountBytes: PositionIncreased["params"]["account"], sizeDelta: BigInt, timestamp: BigInt): void {
+  let tv = TraderVolume.load(account);
+  if (tv == null) {
+    tv = new TraderVolume(account);
+    tv.account = accountBytes;
+    tv.totalVolume = BigInt.zero();
+    tv.tradeCount = 0;
+  }
+  tv.totalVolume = tv.totalVolume.plus(sizeDelta);
+  tv.tradeCount = tv.tradeCount + 1;
+  tv.lastTradeAt = timestamp;
+  tv.save();
+}
 
 export function handlePositionIncreased(event: PositionIncreased): void {
   const key = event.params.key.toHexString();
@@ -41,6 +55,13 @@ export function handlePositionIncreased(event: PositionIncreased): void {
   evt.timestamp = event.block.timestamp;
   evt.txHash = event.transaction.hash;
   evt.save();
+
+  bumpVolume(
+    event.params.account.toHexString(),
+    event.params.account,
+    event.params.sizeDelta,
+    event.block.timestamp
+  );
 }
 
 export function handlePositionDecreased(event: PositionDecreased): void {
@@ -69,6 +90,13 @@ export function handlePositionDecreased(event: PositionDecreased): void {
   evt.timestamp = event.block.timestamp;
   evt.txHash = event.transaction.hash;
   evt.save();
+
+  bumpVolume(
+    event.params.account.toHexString(),
+    event.params.account,
+    event.params.sizeDelta,
+    event.block.timestamp
+  );
 }
 
 export function handlePositionLiquidated(event: PositionLiquidated): void {
