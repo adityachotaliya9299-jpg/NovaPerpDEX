@@ -59,6 +59,9 @@ export function Header() {
           <a href="/risk" className="text-xs font-medium hover:opacity-80" style={{ color: "var(--text-muted)" }}>
             Risk
           </a>
+          <a href="/rewards" className="text-xs font-medium hover:opacity-80" style={{ color: "var(--text-muted)" }}>
+            Rewards
+          </a>
           <Faucet />
           <RefreshPrice />
           <ConnectButton accountStatus="address" chainStatus="icon" showBalance={false} />
