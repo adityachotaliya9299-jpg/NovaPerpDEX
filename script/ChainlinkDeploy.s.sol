@@ -269,7 +269,7 @@ contract DeployChainlink is Script {
                 maxSkewBps: 0,
                 baseFeeBps: 10,
                 dynamicFactorBps: 0,
-                configured: false
+                configured: true 
             })
         );
 
