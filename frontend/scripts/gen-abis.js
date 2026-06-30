@@ -50,6 +50,9 @@ const targets = {
   PositionRouter: "PositionRouter.sol",
   MockERC20: "MockERC20.sol",
   InsuranceFund: "InsuranceFund.sol",
+  StrategyVault: "StrategyVault.sol",
+  StrategyFactory: "StrategyFactory.sol",
+  StrategyRegistry: "StrategyRegistry.sol",
 };
 
 /**
