@@ -6479,6 +6479,11 @@ export const StrategyVaultAbi = [
             "internalType": "address"
           },
           {
+            "name": "fundingEngine",
+            "type": "address",
+            "internalType": "address"
+          },
+          {
             "name": "strategyName",
             "type": "string",
             "internalType": "string"
