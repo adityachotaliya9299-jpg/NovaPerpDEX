@@ -105,6 +105,7 @@ contract StrategyFactory {
                 creator: msg.sender,
                 protocolTreasury: protocolTreasury,
                 agentWallet: agentWallet,
+                fundingEngine: address(defaultFundingEngine),
                 strategyName: name,
                 thesis: thesis,
                 maxDrawdownBps: maxDrawdownBps,
@@ -112,11 +113,6 @@ contract StrategyFactory {
                 maxSinglePositionBps: maxSinglePositionBps
             })
         );
-
-        // Wire funding engine if one is configured
-        if (address(defaultFundingEngine) != address(0)) {
-            sv.setFundingEngine(address(defaultFundingEngine));
-        }
 
         vault = address(sv);
 
