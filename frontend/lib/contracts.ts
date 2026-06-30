@@ -17,6 +17,9 @@ import {
   PositionRouterAbi,
   MockERC20Abi,
   InsuranceFundAbi,
+  StrategyVaultAbi,
+  StrategyFactoryAbi,
+  StrategyRegistryAbi,
 } from "./abis";
 
 
@@ -44,7 +47,9 @@ export const contracts = {
   lpVault: { address: addr("LPVault"), abi: LPVaultAbi },
   rewardDistributor: { address: addr("RewardDistributor"), abi: RewardDistributorAbi },
   liquidationEngine: { address: addr("LiquidationEngine"), abi: LiquidationEngineAbi },
-  insuranceFund: { address: addr("InsuranceFund"), abi: InsuranceFundAbi },
+  strategyRegistry: { address: addr("StrategyRegistry"), abi: StrategyRegistryAbi },
+  strategyFactory: { address: addr("StrategyFactory"), abi: StrategyFactoryAbi },
+  demoStrategyVault: { address: addr("DemoStrategyVault"), abi: StrategyVaultAbi },
   positionRouter: { address: addr("PositionRouter"), abi: PositionRouterAbi },
   collateralToken: { address: addr("MockUSD"), abi: MockERC20Abi },
   rewardToken: { address: addr("RewardToken"), abi: MockERC20Abi },
