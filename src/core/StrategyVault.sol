@@ -174,6 +174,7 @@ contract StrategyVault is IStrategyVault, ReentrancyGuard {
         address creator;
         address protocolTreasury;
         address agentWallet;
+        address fundingEngine; 
         string strategyName;
         string thesis;
         uint256 maxDrawdownBps;
@@ -208,6 +209,10 @@ contract StrategyVault is IStrategyVault, ReentrancyGuard {
         peakNAV = 0;
         totalDeposited = 0;
         tradingHalted = false;
+
+        if (p.fundingEngine != address(0)) {
+            fundingEngine = FundingRateEngine(p.fundingEngine);
+        }
     }
 
     // ------------------------------------------------------------------ //
