@@ -66,6 +66,13 @@ contract StrategyVault is IStrategyVault, ReentrancyGuard {
     uint256 public constant CREATOR_FEE_BPS = 500;
 
     // ------------------------------------------------------------------ //
+    //                              Events                                //
+    // ------------------------------------------------------------------ //
+
+    event Transfer(address indexed from, address indexed to, uint256 value);
+    event Approval(address indexed owner, address indexed spender, uint256 value);
+
+    // ------------------------------------------------------------------ //
     //                       Immutables                                    //
     // ------------------------------------------------------------------ //
 
