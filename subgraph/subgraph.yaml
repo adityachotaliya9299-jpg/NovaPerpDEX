@@ -44,6 +44,7 @@ dataSources:
         - Position
         - PositionEvent
         - LiquidationEvent
+        - TraderVolume
       abis:
         - name: MarginManager
           file: ./abis/MarginManager.json
@@ -55,7 +56,6 @@ dataSources:
         - event: PositionLiquidated(indexed bytes32,indexed address,indexed bytes32,address,uint256,int256,uint256)
           handler: handlePositionLiquidated
       file: ./src/margin-manager.ts
-
 
   - kind: ethereum
     name: FundingRateEngine
@@ -77,3 +77,59 @@ dataSources:
         - event: FundingUpdated(indexed bytes32,int256,int256)
           handler: handleFundingUpdated
       file: ./src/funding-rate-engine.ts
+
+  - kind: ethereum
+    name: StrategyFactory
+    network: sepolia
+    source:
+      address: "0x5a868B8E6234BF67526d664EEabe4769947321b4"
+      abi: StrategyFactory
+      startBlock: 11171353
+    mapping:
+      kind: ethereum/events
+      apiVersion: 0.0.7
+      language: wasm/assemblyscript
+      entities:
+        - Strategy
+      abis:
+        - name: StrategyFactory
+          file: ./abis/StrategyFactory.json
+        - name: StrategyVault
+          file: ./abis/StrategyVault.json
+      eventHandlers:
+        - event: StrategyCreated(indexed address,indexed address,string)
+          handler: handleStrategyCreated
+      file: ./src/strategy-factory.ts
+
+templates:
+  - kind: ethereum
+    name: StrategyVault
+    network: sepolia
+    source:
+      abi: StrategyVault
+    mapping:
+      kind: ethereum/events
+      apiVersion: 0.0.7
+      language: wasm/assemblyscript
+      entities:
+        - Strategy
+        - StrategyTrade
+        - StrategyDeposit
+        - StrategyWithdraw
+        - DrawdownEvent
+        - StrategyPosition
+      abis:
+        - name: StrategyVault
+          file: ./abis/StrategyVault.json
+      eventHandlers:
+        - event: Deposit(indexed address,uint256,uint256)
+          handler: handleStrategyDeposit
+        - event: Withdraw(indexed address,uint256,uint256)
+          handler: handleStrategyWithdraw
+        - event: AgentTraded(indexed bytes32,uint8,uint256,uint256,bool,string)
+          handler: handleAgentTraded
+        - event: DrawdownBreached(uint256,uint256)
+          handler: handleDrawdownBreached
+        - event: TradingHalted(bool)
+          handler: handleTradingHalted
+      file: ./src/strategy-vault.ts
