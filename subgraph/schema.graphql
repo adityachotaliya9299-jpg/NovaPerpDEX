@@ -101,3 +101,115 @@ type TraderVolume @entity(immutable: false) {
   tradeCount: Int!
   lastTradeAt: BigInt!
 }
+
+# ===================================================================== #
+#                  Phase B — Agent / StrategyVault entities             #
+# ===================================================================== #
+
+"""
+A registered strategy vault, created via StrategyFactory.createStrategy.
+This is the canonical record the frontend's /strategies page queries —
+denormalized with creator, thesis, and live aggregate stats so the
+discovery page never needs N+1 queries per card.
+Mutable: aggregate stats (nav, totalDeposited, tradeCount) update as the
+strategy trades and accepts deposits.
+"""
+type Strategy @entity(immutable: false) {
+  id: ID! # vault address, lowercase hex
+  vault: Bytes!
+  creator: Bytes!
+  agentWallet: Bytes!
+  name: String!
+  thesis: String!
+  maxDrawdownBps: BigInt!
+  maxLeverageBps: BigInt!
+  maxSinglePositionBps: BigInt!
+  createdAt: BigInt!
+  createdTxHash: Bytes!
+  active: Boolean!
+  tradingHalted: Boolean!
+
+  # Live aggregates, updated incrementally by handlers — avoids the
+  # frontend needing to sum PositionEvent/StrategyTrade rows on every load.
+  totalDeposited: BigInt!
+  totalWithdrawn: BigInt!
+  investorCount: Int!
+  tradeCount: Int!
+  lastTradeAt: BigInt
+  peakNAV: BigInt!
+  currentDrawdownBpsAtLastUpdate: BigInt!
+}
+
+"""
+A single agent trading decision (AgentTraded event). Append-only — this IS
+the transparency mechanic: every entry has the LLM's human-readable reason
+string, permanently queryable. Powers the Agent Log tab (Phase F).
+"""
+type StrategyTrade @entity(immutable: true) {
+  id: ID! # txHash-logIndex
+  strategy: Bytes! # vault address — denormalized for direct filtering
+  market: Bytes!
+  side: Int!
+  sizeDelta: BigInt!
+  collateralDelta: BigInt!
+  isIncrease: Boolean!
+  reason: String!
+  timestamp: BigInt!
+  txHash: Bytes!
+}
+
+"""
+An investor deposit into a strategy. Append-only.
+"""
+type StrategyDeposit @entity(immutable: true) {
+  id: ID! # txHash-logIndex
+  strategy: Bytes!
+  investor: Bytes!
+  assets: BigInt!
+  shares: BigInt!
+  timestamp: BigInt!
+  txHash: Bytes!
+}
+
+"""
+An investor withdrawal from a strategy. Append-only.
+"""
+type StrategyWithdraw @entity(immutable: true) {
+  id: ID! # txHash-logIndex
+  strategy: Bytes!
+  investor: Bytes!
+  assets: BigInt!
+  shares: BigInt!
+  timestamp: BigInt!
+  txHash: Bytes!
+}
+
+"""
+A drawdown breach event — trading auto-halted. Append-only, and these
+should be rare; surfaced prominently in the Risk Center / Agent Log.
+"""
+type DrawdownEvent @entity(immutable: true) {
+  id: ID! # txHash-logIndex
+  strategy: Bytes!
+  currentDrawdownBps: BigInt!
+  limitBps: BigInt!
+  timestamp: BigInt!
+  txHash: Bytes!
+}
+
+"""
+Per-investor position within a specific strategy. Upserted on every
+deposit/withdraw so "my strategies" pages can query directly instead of
+re-deriving from the deposit/withdraw event log.
+Mutable.
+"""
+type StrategyPosition @entity(immutable: false) {
+  id: ID! # strategy-investor, both lowercase hex
+  strategy: Bytes!
+  investor: Bytes!
+  sharesHeld: BigInt!
+  totalDeposited: BigInt!
+  totalWithdrawn: BigInt!
+  firstDepositAt: BigInt!
+  lastActivityAt: BigInt!
+}
