@@ -22,7 +22,7 @@ function extractAbi(name) {
   return JSON.parse(abisContent.slice(arrayStart, end));
 }
 
-const names = ["OrderBook", "MarginManager", "LiquidationEngine", "FundingRateEngine"];
+const names = ["OrderBook", "MarginManager", "LiquidationEngine", "FundingRateEngine", "StrategyFactory", "StrategyVault"];
 for (const name of names) {
   const abi = extractAbi(name);
   fs.writeFileSync(
