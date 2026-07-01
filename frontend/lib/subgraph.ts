@@ -1,7 +1,7 @@
 
 const SUBGRAPH_URL =
   process.env.NEXT_PUBLIC_SUBGRAPH_URL ??
-  "https://api.studio.thegraph.com/query/1755484/novaperpdex/v0.2.0";
+  "https://api.studio.thegraph.com/query/1755484/novaperpdex/v0.3.0";
 async function querySubgraph<T>(query: string, variables?: Record<string, unknown>): Promise<T> {
   const res = await fetch(SUBGRAPH_URL, {
     method: "POST",
@@ -272,7 +272,7 @@ const LEADERBOARD_QUERY = `
 export async function fetchLeaderboard(): Promise<SubgraphTraderVolume[]> {
   const url =
     process.env.NEXT_PUBLIC_SUBGRAPH_URL ??
-    "https://api.studio.thegraph.com/query/1755484/novaperpdex/v0.2.0";
+    "https://api.studio.thegraph.com/query/1755484/novaperpdex/v0.3.0";
   const res = await fetch(url, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -282,4 +282,206 @@ export async function fetchLeaderboard(): Promise<SubgraphTraderVolume[]> {
   const json = await res.json();
   if (json.errors) throw new Error(json.errors[0]?.message ?? "unknown");
   return (json.data as { traderVolumes: SubgraphTraderVolume[] }).traderVolumes;
+}
+
+// ---- Phase B: Strategy / Agent queries ----
+
+export interface SubgraphStrategy {
+  id: string;
+  vault: string;
+  creator: string;
+  agentWallet: string;
+  name: string;
+  thesis: string;
+  maxDrawdownBps: string;
+  maxLeverageBps: string;
+  maxSinglePositionBps: string;
+  createdAt: string;
+  active: boolean;
+  tradingHalted: boolean;
+  totalDeposited: string;
+  totalWithdrawn: string;
+  investorCount: number;
+  tradeCount: number;
+  lastTradeAt: string | null;
+  peakNAV: string;
+  currentDrawdownBpsAtLastUpdate: string;
+}
+
+export interface SubgraphStrategyTrade {
+  id: string;
+  strategy: string;
+  market: string;
+  side: number;
+  sizeDelta: string;
+  collateralDelta: string;
+  isIncrease: boolean;
+  reason: string;
+  timestamp: string;
+  txHash: string;
+}
+
+export interface SubgraphStrategyDeposit {
+  id: string;
+  strategy: string;
+  investor: string;
+  assets: string;
+  shares: string;
+  timestamp: string;
+  txHash: string;
+}
+
+export interface SubgraphStrategyWithdraw {
+  id: string;
+  strategy: string;
+  investor: string;
+  assets: string;
+  shares: string;
+  timestamp: string;
+  txHash: string;
+}
+
+export interface SubgraphStrategyPosition {
+  id: string;
+  strategy: string;
+  investor: string;
+  sharesHeld: string;
+  totalDeposited: string;
+  totalWithdrawn: string;
+  firstDepositAt: string;
+  lastActivityAt: string;
+}
+
+const ALL_STRATEGIES_QUERY = `
+  query AllStrategies {
+    strategies(
+      first: 50
+      orderBy: createdAt
+      orderDirection: desc
+      where: { active: true }
+    ) {
+      id
+      vault
+      creator
+      agentWallet
+      name
+      thesis
+      maxDrawdownBps
+      maxLeverageBps
+      maxSinglePositionBps
+      createdAt
+      active
+      tradingHalted
+      totalDeposited
+      totalWithdrawn
+      investorCount
+      tradeCount
+      lastTradeAt
+      peakNAV
+      currentDrawdownBpsAtLastUpdate
+    }
+  }
+`;
+
+const STRATEGY_DETAIL_QUERY = `
+  query StrategyDetail($vault: ID!) {
+    strategy(id: $vault) {
+      id
+      vault
+      creator
+      agentWallet
+      name
+      thesis
+      maxDrawdownBps
+      maxLeverageBps
+      maxSinglePositionBps
+      createdAt
+      active
+      tradingHalted
+      totalDeposited
+      totalWithdrawn
+      investorCount
+      tradeCount
+      lastTradeAt
+      peakNAV
+      currentDrawdownBpsAtLastUpdate
+    }
+  }
+`;
+
+const STRATEGY_TRADES_QUERY = `
+  query StrategyTrades($vault: Bytes!, $first: Int) {
+    strategyTrades(
+      first: $first
+      orderBy: timestamp
+      orderDirection: desc
+      where: { strategy: $vault }
+    ) {
+      id
+      strategy
+      market
+      side
+      sizeDelta
+      collateralDelta
+      isIncrease
+      reason
+      timestamp
+      txHash
+    }
+  }
+`;
+
+const INVESTOR_POSITIONS_QUERY = `
+  query InvestorPositions($investor: Bytes!) {
+    strategyPositions(
+      first: 50
+      where: { investor: $investor, sharesHeld_gt: "0" }
+    ) {
+      id
+      strategy
+      investor
+      sharesHeld
+      totalDeposited
+      totalWithdrawn
+      firstDepositAt
+      lastActivityAt
+    }
+  }
+`;
+
+export async function fetchAllStrategies(): Promise<SubgraphStrategy[]> {
+  const data = await querySubgraph<{ strategies: SubgraphStrategy[] }>(
+    ALL_STRATEGIES_QUERY
+  );
+  return data.strategies;
+}
+
+export async function fetchStrategyDetail(
+  vault: string
+): Promise<SubgraphStrategy | null> {
+  const data = await querySubgraph<{ strategy: SubgraphStrategy | null }>(
+    STRATEGY_DETAIL_QUERY,
+    { vault: vault.toLowerCase() }
+  );
+  return data.strategy;
+}
+
+export async function fetchStrategyTrades(
+  vault: string,
+  first: number = 50
+): Promise<SubgraphStrategyTrade[]> {
+  const data = await querySubgraph<{ strategyTrades: SubgraphStrategyTrade[] }>(
+    STRATEGY_TRADES_QUERY,
+    { vault: vault.toLowerCase(), first }
+  );
+  return data.strategyTrades;
+}
+
+export async function fetchInvestorPositions(
+  investor: string
+): Promise<SubgraphStrategyPosition[]> {
+  const data = await querySubgraph<{
+    strategyPositions: SubgraphStrategyPosition[];
+  }>(INVESTOR_POSITIONS_QUERY, { investor: investor.toLowerCase() });
+  return data.strategyPositions;
 }
