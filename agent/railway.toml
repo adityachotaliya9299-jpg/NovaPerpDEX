@@ -1,0 +1,11 @@
+[build]
+builder = "nixpacks"
+
+[deploy]
+startCommand = "node runner.js"
+restartPolicyType = "on_failure"
+restartPolicyMaxRetries = 5
+healthcheckPath = ""
+
+[[services]]
+name = "qevora-agent"
