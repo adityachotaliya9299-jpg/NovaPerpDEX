@@ -1,0 +1,19 @@
+{
+  "name": "qevora-agent-runner",
+  "version": "1.0.0",
+  "description": "Autonomous trading agent for Qevora Agents — reads strategy targets, computes drift, rebalances positions on NovaPerpDEX via StrategyVault.",
+  "main": "runner.js",
+  "scripts": {
+    "start": "node runner.js",
+    "start:dry": "DRY_RUN=true node runner.js",
+    "start:verbose": "LOG_LEVEL=debug node runner.js"
+  },
+  "dependencies": {
+    "viem": "^2.0.0",
+    "dotenv": "^16.0.0",
+    "node-cron": "^3.0.0"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}
