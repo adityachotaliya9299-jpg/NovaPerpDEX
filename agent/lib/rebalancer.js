@@ -212,11 +212,11 @@ async function runRebalanceCycle(opts) {
         side: target.side,
         reason: `Target weight is 0% — closing position. Current size: ${formatUSD(currentSize)}.`,
       });
-    } else if (currentSize < targetSize) {
-      // Position is too small — increase it
+   } else if (currentSize < targetSize) {
       const delta = targetSize - currentSize;
-      // Use proportional collateral (1x leverage relative to delta)
-      const collateralDelta = delta;
+      const POSITION_FEE_BPS = 10n;
+      const fee = (delta * POSITION_FEE_BPS) / 10000n;
+      const collateralDelta = delta - fee;
       actions.push({
         type: "increase",
         market: target.market,
