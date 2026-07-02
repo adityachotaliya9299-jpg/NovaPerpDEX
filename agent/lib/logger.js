@@ -1,7 +1,13 @@
 /**
- * Minimal structured logger. Writes JSON lines so Railway's log aggregator can parse them, and also human-readable lines on stdout in debug mode.
+ * Minimal structured logger. Writes JSON lines so Railway's log aggregator
+ * can parse them, and also human-readable lines on stdout in debug mode.
  */
 const LOG_LEVEL = process.env.LOG_LEVEL ?? "info";
+
+
+function replacer(_key, value) {
+  return typeof value === "bigint" ? value.toString() + "n" : value;
+}
 
 function timestamp() {
   return new Date().toISOString();
@@ -11,11 +17,11 @@ function log(level, context, message, data = {}) {
   const entry = { ts: timestamp(), level, context, message, ...data };
   if (LOG_LEVEL === "debug") {
     const dataStr = Object.keys(data).length
-      ? " " + JSON.stringify(data)
+      ? " " + JSON.stringify(data, replacer)
       : "";
     console.log(`[${entry.ts}] [${level.toUpperCase()}] [${context}] ${message}${dataStr}`);
   } else {
-    console.log(JSON.stringify(entry));
+    console.log(JSON.stringify(entry, replacer));
   }
 }
 
